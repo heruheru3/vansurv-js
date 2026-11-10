@@ -132,7 +132,10 @@ const Game = {
     this.resetGame();
     UI.hideLoading();
     AudioSys.playBgm('level0'); // 選択画面BGM（unlock後に再生開始）
-    this.app.ticker.add((ticker) => this.frame(ticker.deltaMS));
+    // 注意: Pixi 7 の Ticker はコールバックへ deltaTime（数値）を渡す。
+    // deltaMS はティッカー本体から読むこと（引数を ticker と誤認すると NaN になる）。
+    const ticker = this.app.ticker;
+    ticker.add(() => this.frame(ticker.deltaMS));
     // デバッグ/検証用フック
     window.__vansurv = this;
   },
