@@ -335,6 +335,9 @@ const Game = {
     return spr;
   },
   addEnemy(e) {
+    // 出現した瞬間からプレイヤーの方を向く（2026-11-11 浩之様の指定。
+    // 以前は初期値の右向き固定で、動き出すまで逆を向いていることがあった）
+    if (this.player) e.facingRight = this.player.x >= e.x;
     const tex = Tex.enemies.get(e.imageFile);
     let spr;
     if (tex) { spr = new PIXI.Sprite(tex); spr.width = e.imageSize; spr.height = e.imageSize; }
