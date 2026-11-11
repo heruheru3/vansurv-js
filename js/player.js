@@ -105,7 +105,8 @@ updateRegen(game) {
 if (this.hp <= 0) { this.lastRegenMs = game.nowMs; return;}
 if (this.subLevel('hp') > 0 && this.hp < this.maxHp() &&
 game.nowMs - this.lastRegenMs >= C.NATURAL_HEAL_INTERVAL_MS) {
-this.heal(this.naturalHealAmount(), 'auto');
+const healed = this.heal(this.naturalHealAmount(), 'auto');
+if (healed > 0 && game.spawnHealFx) game.spawnHealFx(healed, 'auto'); // 原作 HealEffect/AutoHealEffect
 this.lastRegenMs = game.nowMs;
 }
 }

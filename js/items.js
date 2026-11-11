@@ -182,7 +182,15 @@ update(game, dtF) {
 if (this.isDropping) {
 const t = Math.min(1, (game.nowMs - this.spawnMs) / this.dropDuration);
 this.y = (this.finalY - 80) + 80 * t;
-if (t >= 1) { this.isDropping = false; this.y = this.finalY;}
+if (t >= 1) {
+this.isDropping = false; this.y = this.finalY;
+// 着地時の砂埃（原作 ui/box.py の DustParticle）
+const dustColors = [0x8b795e, 0xa08c73, 0x655543, 0xb8a68b];
+for (let i = 0; i < 12; i++) {
+game.particles.add(this.x + randFloat(-20, 20), this.finalY + 10 + randFloat(-5, 5),
+{ color: dustColors[i % dustColors.length], speed: randFloat(0.5, 1.5), life: randInt(48, 90), size: randInt(2, 4) });
+}
+}
 }
 this.floatTime += (dtF / 60) * 2.0;
 if (this.hitFlashTimer > 0) this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dtF / 60);

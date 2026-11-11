@@ -182,6 +182,9 @@ const Game = {
     this.damageNumbers = new DamageNumbers(this.world);
     this.avoidFx = []; // 回避演出（フラッシュ＋テキスト）の進行中リスト
     this.avoidTextPool = [];
+    this.ringFx = []; // 汎用リングフラッシュ（被弾・ボス撃破）の進行中リスト
+    this.textFx = []; // 汎用フローティングテキスト（回復・レベルアップ）の進行中リスト
+    this.textPools = new Map();
 
     this.resetGame();
     UI.hideLoading();
@@ -448,6 +451,8 @@ const Game = {
     // 11) 演出
     this.particles.update(dtF);
     this.updateAvoidanceFx(dtF);
+    this.updateRingFx(dtF);
+    this.updateTextFx(dtF);
     this.damageNumbers.update(dtF);
     if (this.nowMs > this.shakeEndMs) this.shakeIntensity = 0;
     // 12) カメラ（プレイヤーへ lerp 追随）
@@ -596,7 +601,7 @@ const Game = {
         // ガーリックの吸収回復（攻撃ごとに500ms間隔で1回復）
         if (atk.type === 'garlic' && this.nowMs - atk.lastGarlicHealTime >= C.GARLIC_HEAL_INTERVAL_MS) {
           const healed = this.player.heal(this.player.garlicHealAmount(), 'garlic');
-          if (healed > 0) AudioSys.playSound('heal');
+          if (healed > 0) { AudioSys.playSound('heal'); this.spawnHealFx(healed, 'garlic'); }
           atk.lastGarlicHealTime = this.nowMs;
         }
         if (e.hp <= 0) this.killEnemy(e, false);
@@ -624,6 +629,14 @@ const Game = {
     if (e.isBoss) {
       this.activateShake();
       AudioSys.playSound('bomb');
+      // 原作 BossDeathEffect（紫の粒子がリング状に拡散、寿命60〜120f）＋
+      // BossDeathFlash（黄色い円が半径130→220へ拡大しながら消える）
+      for (let i = 0; i < 44; i++) {
+        const a = (Math.PI * 2 * i) / 44, d = randFloat(10, 50);
+        this.particles.add(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d,
+          { color: 0x7814ff, speed: randFloat(1, 3), life: randInt(60, 120), size: randInt(2, 4) });
+      }
+      this.spawnRingFx(e.x, e.y, 0xc8c800, 16, 130, 220, 90 / 255);
       const box = new ItemBox(e.x, e.y, 4, this.nowMs);
       this.boxManager.boxes.push(box);
       this.attachBoxSprite(box);
@@ -704,6 +717,77 @@ const Game = {
     this.avoidFx = kept;
   },
 
+  /* 汎用リングフラッシュ（原作 HurtFlash=被弾時の赤円 / BossDeathFlash=拡大する黄円）:
+     半径 rFrom→rTo へ変化しながら alpha0 からフェードアウトする */
+  spawnRingFx(x, y, color, durationFrames, radiusFrom, radiusTo, alpha0) {
+    const s = new PIXI.Sprite(Tex.circle);
+    s.anchor.set(0.5); s.tint = color; s.position.set(x, y); s.alpha = alpha0;
+    const d = radiusFrom * 2 * (32 / 30); // Tex.circle の実描画径30pxに対する換算
+    s.width = d; s.height = d;
+    this.world.addChild(s);
+    this.ringFx.push({ s, life: 0, dur: durationFrames, rFrom: radiusFrom, rTo: radiusTo, a0: alpha0 });
+  },
+  updateRingFx(dtF) {
+    const kept = [];
+    for (const fx of this.ringFx) {
+      fx.life += dtF;
+      const fr = fx.life / fx.dur;
+      if (fr >= 1) { this.world.removeChild(fx.s); fx.s.destroy(); continue; }
+      const r = fx.rFrom + (fx.rTo - fx.rFrom) * fr;
+      const d = r * 2 * (32 / 30);
+      fx.s.width = d; fx.s.height = d;
+      fx.s.alpha = fx.a0 * (1 - fr);
+      kept.push(fx);
+    }
+    this.ringFx = kept;
+  },
+
+  /* 汎用フローティングテキスト（原作 HealEffect / LevelUpEffect 用、プール再利用） */
+  spawnTextFx(text, x, y, opts = {}) {
+    const { color = 0xffffff, fontSize = 16, dur = 40, vy = 0, fadeIn = 0, fadeOut = 8, shadow = false } = opts;
+    const key = color + '|' + fontSize + '|' + (shadow ? 1 : 0);
+    let pool = this.textPools.get(key);
+    if (!pool) { pool = []; this.textPools.set(key, pool); }
+    let t = pool.pop();
+    if (!t) {
+      const style = { fontFamily: 'NotoSansJP, sans-serif', fontSize, fill: color, fontWeight: 'bold' };
+      if (shadow) { style.dropShadow = true; style.dropShadowColor = 0x000000; style.dropShadowAlpha = 0.6; style.dropShadowDistance = 1; style.dropShadowAngle = Math.PI / 2; }
+      t = new PIXI.Text('', style);
+      t.anchor.set(0.5, 1);
+      this.world.addChild(t);
+    }
+    t.text = text;
+    t.position.set(x, y);
+    t.alpha = fadeIn > 0 ? 0 : 1; t.visible = true;
+    this.textFx.push({ t, pool, life: 0, dur, vy, fadeIn, fadeOut });
+  },
+  updateTextFx(dtF) {
+    const kept = [];
+    for (const fx of this.textFx) {
+      fx.life += dtF;
+      if (fx.life >= fx.dur) { fx.t.visible = false; fx.pool.push(fx.t); continue; }
+      fx.t.position.y += fx.vy * dtF;
+      const remain = fx.dur - fx.life;
+      fx.t.alpha = fx.life < fx.fadeIn ? fx.life / fx.fadeIn : (remain < fx.fadeOut ? remain / fx.fadeOut : 1);
+      kept.push(fx);
+    }
+    this.textFx = kept;
+  },
+
+  /* 回復表示（原作 HealEffect + AutoHealEffect）: 緑の「+N HP」が上昇表示。
+     auto（自然回復）/ garlic 系は周囲に緑の粒子も出す */
+  spawnHealFx(amount, type) {
+    const p = this.player;
+    this.spawnTextFx('+' + Math.floor(amount) + ' HP', p.x, p.y - p.size - 4,
+      { color: 0x32ff32, fontSize: 18, dur: 80, vy: -0.8, fadeIn: 0, fadeOut: 80, shadow: true });
+    if (type === 'auto' || type === 'garlic') {
+      for (let i = 0; i < 10; i++) {
+        this.particles.add(p.x + randFloat(-10, 10), p.y + randFloat(-10, 10),
+          { color: 0x64ff96, speed: randFloat(0.5, 1.5), life: randInt(30, 45), size: 2 });
+      }
+    }
+  },
+
   /* プレイヤー vs 敵・敵弾（main.py の接触判定）: 矩形判定、回避抽選、
      ダメージ = max(1, int(敵ダメージ - 防御))、被弾で通常無敵を付与 */
   collidePlayer() {
@@ -719,6 +803,7 @@ const Game = {
           continue;
         }
         p.hp -= Math.max(1, Math.floor(e.damage - p.defense()));
+        this.spawnRingFx(p.x, p.y, 0xff0000, 12, p.size * 1.25, p.size, 150 / 255); // 原作 HurtFlash
         p.setNormalInvincible(this);
         AudioSys.playSound('player_hurt');
         this.particles.burst(p.x, p.y, 0xff4040, 4);
@@ -736,6 +821,7 @@ const Game = {
           if (!p.canTakeDamage(this)) continue;
           if (Math.random() < p.avoidance()) { this.spawnAvoidanceFx(); continue; }
           p.hp -= Math.max(1, Math.floor(pr.damage - p.defense()));
+          this.spawnRingFx(p.x, p.y, 0xff0000, 12, p.size * 1.25, p.size, 150 / 255); // 原作 HurtFlash
           p.setNormalInvincible(this);
           AudioSys.playSound('player_hurt');
           this.particles.burst(p.x, p.y, 0xff4040, 4);
@@ -781,6 +867,11 @@ const Game = {
       if (item.sprite) {
         const bob = item.type === 'money' ? Math.sin((item.animTime = (item.animTime || 0) + 0.1 * dtF)) * 2 : 0;
         item.sprite.position.set(item.x, item.y + bob);
+        // 出現アニメーション（原作 GameItem.spawn_scale: 300msで 0→1、1.2倍速で到達）
+        if (item.type !== 'money' && item.spawnMs !== undefined) {
+          const f = Math.min(1, Math.max(0, (this.nowMs - item.spawnMs) / 300) * 1.2);
+          item.sprite.width = 48 * f; item.sprite.height = 48 * f;
+        }
         if (item.label) item.label.position.set(item.x, item.y + bob + 16);
       }
       const d2 = dist2(p, item);
@@ -791,7 +882,7 @@ const Game = {
         this.items.splice(this.items.indexOf(item), 1);
         if (item.type === 'heal') {
           const healed = p.heal(C.HEAL_ITEM_AMOUNT, 'item');
-          if (healed > 0) { AudioSys.playSound('heal'); this.particles.burst(p.x, p.y, 0x40ff40, 6); }
+          if (healed > 0) { AudioSys.playSound('heal'); this.particles.burst(p.x, p.y, 0x40ff40, 6); this.spawnHealFx(healed, 'item'); }
         } else if (item.type === 'bomb') this.bombEffect();
         else if (item.type === 'magnet') { p.activateMagnet(this); AudioSys.playSound('powerup'); }
         else if (item.type === 'money') {
@@ -811,6 +902,9 @@ const Game = {
   openLevelUpMenu() {
     this.state = 'levelup';
     AudioSys.playSound('powerup');
+    // 原作 LevelUpEffect: 頭上に金色の「LEVEL UP!」（48フレーム、フェードイン8/アウト12）
+    this.spawnTextFx('LEVEL UP!', this.player.x, this.player.y - this.player.size - 10,
+      { color: 0xffdc78, fontSize: 22, dur: 48, vy: 0, fadeIn: 8, fadeOut: 12 });
     let choices = this.player.buildLevelUpChoices(3);
     if (!choices.length) choices = this.player.buildSubitemChoice();
     if (!choices.length) { this.state = 'playing'; return; }
@@ -850,10 +944,19 @@ const Game = {
   endStats(clear, clearBonus) {
     const nameOf = (t) => descName('weapons', t === 'book' ? 'rotating_book' : t);
     const rows = Object.entries(this.damageStats).sort((a, b) => b[1] - a[1]).map(([t, d]) => [nameOf(t), d]);
+    // 敵別撃破数（原作 draw_enemy_kill_stats）。名前は enemy_stats.csv の description
+    const killRows = Object.entries(this.enemyKillStats).sort((a, b) => b[1] - a[1]).map(([k, n]) => {
+      if (k.startsWith('boss')) {
+        const bs = GameData.bossStats.get(parseInt(k.slice(4), 10));
+        return ['ボス' + k.slice(4) + (bs ? '（Lv' + bs.level + '）' : ''), n];
+      }
+      const st = GameData.enemyStats.get(parseInt(k, 10));
+      return [st && st.description ? st.description : ('敵' + k), n];
+    });
     return {
       clear, timeSec: Math.floor(this.gameTime), level: this.player.level, kills: this.kills,
       sessionMoney: this.sessionMoney, survivalBonus: Math.floor(this.gameTime) * C.MONEY_PER_SURVIVAL_SECOND,
-      clearBonus, damageRows: rows,
+      clearBonus, damageRows: rows, killRows,
     };
   },
   onGameOver() {

@@ -189,6 +189,13 @@ const UI = {
       }
       html += '</table>';
     }
+    if (stats.killRows && stats.killRows.length) {
+      html += '<div class="dmg-title">敵別撃破数</div><table>';
+      for (const [name, n] of stats.killRows) {
+        html += '<tr><td>' + name + '</td><td>' + n + ' 体</td></tr>';
+      }
+      html += '</table>';
+    }
     this.els['end-stats'].innerHTML = html;
     this.renderEndButtons();
     this.els.endscreen.style.display = 'flex';

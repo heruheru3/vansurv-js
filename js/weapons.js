@@ -432,7 +432,11 @@ let pool = game.enemies.filter(e => e.x >= cam.x && e.x <= cam.x + C.SCREEN_WIDT
 if (!pool.length) pool = game.enemies;
 const out = [];
 const k = Math.min(pool.length, num);
-const targets = shuffleCopy(pool).slice(0, k);
+// ターゲット選定: ボスを最優先し、残りの落雷枠を通常敵からランダムに選ぶ
+// （原作コードは全体からランダム抽選。ボス優先は 2026-11-11 浩之様の指定で追加）
+const bossTargets = shuffleCopy(pool.filter(e => e.isBoss));
+const otherTargets = shuffleCopy(pool.filter(e =>!e.isBoss));
+const targets = [...bossTargets, ...otherTargets].slice(0, k);
 targets.forEach((t, i) => {
 const headOffset = Math.max(0, Math.floor(t.size * 0.9)) + 4;
 const atk = makeAttack({
