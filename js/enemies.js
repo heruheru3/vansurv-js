@@ -333,6 +333,7 @@ else { this.x = p.x - C.SCREEN_WIDTH / 2 - m; this.y = p.y + randInt(-C.SCREEN_H
 this.x = Math.max(50, Math.min(C.WORLD_WIDTH - 50, this.x));
 this.y = Math.max(50, Math.min(C.WORLD_HEIGHT - 50, this.y));
 this.initialDirection = null;
+this.facingRight = p.x >= this.x; // 再出現時もプレイヤーの方を向く
 }
 }
 
