@@ -167,7 +167,7 @@ const Game = {
 
     // ドット絵の輪郭を保持する: テクスチャ拡大縮小は全て NEAREST（補間なし）にする
     PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
-    this.app = new PIXI.Application({ width: window.innerWidth, height: window.innerHeight, backgroundColor: 0x000000, antialias: false, powerPreference: 'high-performance' });
+    this.app = new PIXI.Application({ width: window.innerWidth, height: window.innerHeight, backgroundColor: 0x000000, antialias: false });
     document.getElementById('stage').prepend(this.app.view);
     this.zoom = C.ZOOM_DEFAULT; // 既定は少し引いた画角（浩之様の指定）
     this.applyViewSize();
@@ -219,7 +219,7 @@ const Game = {
     // 注意: Pixi 7 の Ticker はコールバックへ deltaTime（数値）を渡す。
     // deltaMS はティッカー本体から読むこと（引数を ticker と誤認すると NaN になる）。
     const ticker = this.app.ticker;
-    ticker.maxFPS = 0; // 表示リフレッシュレートに任せる（ロジックは frame() が固定刻みで進める）
+    ticker.maxFPS = C.FPS; // フレームレート上限は 60fps（constants の FPS）
     ticker.add(() => this.frame(ticker.deltaMS));
     // デバッグ/検証用フック
     window.__vansurv = this;
@@ -396,8 +396,6 @@ const Game = {
     this.pendingLevels = 0;
     this.camera.x = clamp(this.player.x - C.SCREEN_WIDTH / 2, 0, C.WORLD_WIDTH - C.SCREEN_WIDTH);
     this.camera.y = clamp(this.player.y - C.SCREEN_HEIGHT / 2, 0, C.WORLD_HEIGHT - C.SCREEN_HEIGHT);
-    this.prevCameraX = this.camera.x; this.prevCameraY = this.camera.y;
-    this.player.prevX = this.player.x; this.player.prevY = this.player.y;
     this._hudItemsDirty = true;
     this.openInitialWeaponSelect();
   },
@@ -435,7 +433,6 @@ const Game = {
     // 出現した瞬間からプレイヤーの方を向く（2026-11-11 浩之様の指定。
     // 以前は初期値の右向き固定で、動き出すまで逆を向いていることがあった）
     if (this.player) e.facingRight = this.player.x >= e.x;
-    e.prevX = e.x; e.prevY = e.y; // 描画補間の初期位置（出現時に滑らない）
     const tex = Tex.enemies.get(e.imageFile);
     let spr;
     if (tex) { spr = new PIXI.Sprite(tex); spr.width = e.imageSize; spr.height = e.imageSize; }
@@ -532,32 +529,16 @@ const Game = {
 
   /* ---------- メインフレーム ---------- */
   frame(deltaMS) {
+    const dtMs = Math.min(deltaMS, 50);       // DELTA_TIME_CAP 相当
+    const dtF = dtMs / (1000 / 60);            // 60fps基準のフレーム換算
     this.fps = this.fps * 0.95 + (1000 / Math.max(deltaMS, 0.01)) * 0.05;
-    // 固定タイムステップ: ロジックは常に 1/60 秒刻みで進める（2026-11-11 滑らかさ対策）。
-    // 従来は実フレーム時間そのままで進めていたため、表示リフレッシュレート
-    // （60Hz/120Hz）や一時的な処理落ちで1フレームの進み幅がブレてガタついた。
-    // 論理ステップを均一にすると、どの画面でも動きが一定になる。
-    const STEP_MS = 1000 / 60;
-    this.accMs = Math.min((this.accMs || 0) + deltaMS, 100); // 溜め込み上限（復帰時の暴走防止）
-    let steps = 0;
-    while (this.accMs >= STEP_MS && steps < 4) {
-      this.accMs -= STEP_MS; steps++;
-      if (this.state === 'playing') {
-        // 描画補間用にステップ直前の位置を控える（syncSprites が前位置→現在位置を
-        // 描画フレーム側で繋ぎ、表示レートや rAF の揺れに依らない滑らかさにする）
-        this.prevCameraX = this.camera.x; this.prevCameraY = this.camera.y;
-        const pl = this.player;
-        if (pl) { pl.prevX = pl.x; pl.prevY = pl.y; }
-        for (const e of this.enemies) { e.prevX = e.x; e.prevY = e.y; }
-        this.nowMs += STEP_MS;
-        this.gameTime += STEP_MS / 1000;
-        this.update(1);
-        if (this.gameTime >= C.SURVIVAL_TIME && this.state === 'playing') this.onGameClear();
-      }
+    if (this.state === 'playing') {
+      this.nowMs += dtMs;
+      this.gameTime += dtMs / 1000;
+      this.update(dtF);
+      if (this.gameTime >= C.SURVIVAL_TIME && this.state === 'playing') this.onGameClear();
     }
-    if (steps >= 4) this.accMs = 0; // 処理落ち時は余りを捨てる（スローモーション化を防ぐ）
-    this.renderAlpha = Math.max(0, Math.min(1, this.accMs / STEP_MS)); // 補間の進み具合
-    this.syncSprites(steps);
+    this.syncSprites(dtF);
     UI.updateHUD(this);
   },
 
@@ -1198,13 +1179,6 @@ const Game = {
   syncSprites(dtF) {
     const p = this.player;
     if (!p || !p.sprite) return;
-    // 描画補間: 論理位置（1/60刻み）をそのまま描くと表示側で段差になるため、
-    // 前ステップ位置→現位置を描画フレームの進み具合（renderAlpha）で繋ぐ
-    const al = this.renderAlpha === undefined ? 1 : this.renderAlpha;
-    const lerp = (a, b) => a + (b - a) * al;
-    const pcx = this.prevCameraX === undefined ? this.camera.x : this.prevCameraX;
-    const pcy = this.prevCameraY === undefined ? this.camera.y : this.prevCameraY;
-    const rcx = lerp(pcx, this.camera.x), rcy = lerp(pcy, this.camera.y);
     // ワールドの平行移動（カメラ＋画面揺れ）
     let shX = 0, shY = 0;
     if (this.shakeIntensity > 0) {
@@ -1215,16 +1189,14 @@ const Game = {
     }
     // ワールドコンテナは scale=ズーム のため、位置はカメラ×ズームで引く
     const z = this.zoom || 1;
-    this.world.position.set(-Math.round((rcx + shX) * z), -Math.round((rcy + shY) * z));
+    this.world.position.set(-Math.round((this.camera.x + shX) * z), -Math.round((this.camera.y + shY) * z));
 
     // プレイヤー（歩行フレーム切替・無敵点滅・向き反転）
     const spr = p.sprite;
-    const pix = lerp(p.prevX === undefined ? p.x : p.prevX, p.x);
-    const piy = lerp(p.prevY === undefined ? p.y : p.prevY, p.y);
-    spr.position.set(pix, piy);
+    spr.position.set(p.x, p.y);
     // 足元の影（プレイヤーのみ）。ドットの下端付近に薄く落とす
     if (this.playerShadow) {
-      this.playerShadow.position.set(pix, piy + PLAYER_SPRITE_SIZE / 2 - 3);
+      this.playerShadow.position.set(p.x, p.y + PLAYER_SPRITE_SIZE / 2 - 3);
     }
     if (Tex.playerFrames.length) {
       const moving = p.movementDx !== 0 || p.movementDy !== 0;
@@ -1250,8 +1222,8 @@ const Game = {
     }
 
     // 敵（歩行アニメ: 上下±1px・左右スウェイ・回転。原作 constants の値）
-    const camL = rcx - C.DRAWING_MARGIN, camR = rcx + C.SCREEN_WIDTH + C.DRAWING_MARGIN;
-    const camT = rcy - C.DRAWING_MARGIN, camB = rcy + C.SCREEN_HEIGHT + C.DRAWING_MARGIN;
+    const camL = this.camera.x - C.DRAWING_MARGIN, camR = this.camera.x + C.SCREEN_WIDTH + C.DRAWING_MARGIN;
+    const camT = this.camera.y - C.DRAWING_MARGIN, camB = this.camera.y + C.SCREEN_HEIGHT + C.DRAWING_MARGIN;
     for (const e of this.enemies) {
       if (!e.sprite) continue;
       const visible = e.x >= camL && e.x <= camR && e.y >= camT && e.y <= camB;
@@ -1263,8 +1235,7 @@ const Game = {
         swayX = Math.sin(e.animationTime * C.ENEMY_WALK_SWAY_SPEED) * C.ENEMY_WALK_SWAY_AMPLITUDE;
         rot = Math.sin(e.animationTime * C.ENEMY_WALK_ROTATION_SPEED) * C.ENEMY_WALK_ROTATION_AMPLITUDE * Math.PI / 180;
       }
-      e.sprite.position.set(lerp(e.prevX === undefined ? e.x : e.prevX, e.x) + swayX,
-                            lerp(e.prevY === undefined ? e.y : e.prevY, e.y) + bobY);
+      e.sprite.position.set(e.x + swayX, e.y + bobY);
       e.sprite.rotation = rot;
       const baseScaleX = e.imageSize / (e.sprite.texture.width || e.imageSize);
       // 向きは原作準拠: 基準画像は左向き（'left'）で、右移動時は反転画像（'right'）を使う。
