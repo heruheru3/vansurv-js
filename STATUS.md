@@ -310,3 +310,18 @@ python3 -m http.server 8000
   （初登場時の転送スパイク予防、updateTexture を try/catch でガード）。
 - 実測: バッファ7/7デコード完了、再生で BufferSource 生成・clone 0件、
   SE OFF時は生成0件、選択画面時点でテクスチャ42枚常駐、エラー0件。
+
+## 2026-11-12 WebAudioのiOS無音対策
+
+- 実機報告: SE ONでも効果音が鳴らない。見立ては、読み込み時に生成した
+  AudioContext が iPhone で suspended のまま固まり、バッファ再生しても
+  無音（バッファがあるためHTMLAudioフォールバックにも落ちない）。
+- 対策（audio.js）:
+  1. playSound のバッファ再生は context が 'running' の時だけ。suspended 等
+     では従来のHTMLAudio（clone）方式へフォールバックし、resumeも試みる。
+  2. unlock() で context の生成・resume に加え、未デコード分の読み込みを
+     開始/再試行。デコードはコールバック形式の decodeAudioData を使用
+     （Safariで suspended 中に Promise が解決しない問題の回避）。
+  3. iOS定石の無音バッファ再生によるアンロックを unlock() に追加（1回のみ）。
+- 実測: バッファ7/7（コールバック形式でデコード）、running時は BufferSource
+  再生・clone 0件、suspended を装った場合は clone へフォールバック、エラー0件。

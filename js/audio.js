@@ -10,6 +10,8 @@ const AudioSys = {
   sounds: {},       // name -> テンプレートAudio要素（WebAudioの用意が無い間のフォールバック）
   buffers: {},      // name -> AudioBuffer（SEのキャッシュ。再生はここから直接鳴らす）
   ctx: null,        // AudioContext（SE再生用）
+  _inflight: {},    // name -> デコード処理中フラグ
+  _pinged: false,   // iOS向け無音アンロック済みか
   bgm: null,
   bgmName: null,
   lastPlayed: {},   // name -> 最終再生時刻(ms)
@@ -45,15 +47,30 @@ const AudioSys = {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
-      this.ctx = new AC();
-      for (const n of this.SFX_NAMES) {
-        fetch('assets/sfx/' + n + '.wav')
-          .then((r) => r.arrayBuffer())
-          .then((ab) => this.ctx.decodeAudioData(ab))
-          .then((buf) => { this.buffers[n] = buf; })
-          .catch(() => { /* 失敗した音はHTMLAudioフォールバックで鳴らす */ });
-      }
+      if (!this.ctx) this.ctx = new AC();
+      this._loadBuffers();
     } catch (e) { /* WebAudioが使えない環境ではフォールバック動作 */ }
+  },
+
+  /* 未デコードのSEを読み込んでデコードする。iOS Safari では AudioContext が
+     suspended の間に Promise 形式の decodeAudioData が解決しないことがあるため、
+     コールバック形式で呼ぶ。失敗・未完了の音は unlock() のたびに再試行される */
+  _loadBuffers() {
+    if (!this.ctx) return;
+    for (const n of this.SFX_NAMES) {
+      if (this.buffers[n] || this._inflight[n]) continue;
+      this._inflight[n] = true;
+      fetch('assets/sfx/' + n + '.wav')
+        .then((r) => r.arrayBuffer())
+        .then((ab) => new Promise((res, rej) => {
+          try {
+            const dp = this.ctx.decodeAudioData(ab, res, rej);
+            if (dp && dp.catch) dp.catch(() => {});
+          } catch (e) { rej(e); }
+        }))
+        .then((buf) => { this.buffers[n] = buf; this._inflight[n] = false; })
+        .catch(() => { this._inflight[n] = false; /* 失敗した音はHTMLAudioフォールバックで鳴らす */ });
+    }
   },
 
   setSfxEnabled(on) {
@@ -65,10 +82,23 @@ const AudioSys = {
   /* 最初のユーザー操作から呼ばれる。以後、予約されていたBGMも再生開始する */
   unlock() {
     // iOSではユーザー操作の中で AudioContext を resume しないと鳴らない。
-    // バックグラウンド復帰で再び止まることもあるため、呼ばれるたびに試みる
+    // 読み込み時に作った context が suspended のまま固まる実機報告があるため、
+    // 操作のたびに「生成・resume・未デコード分の再試行」まで行う
+    if (!this.ctx) this._initWebAudio();
     if (this.ctx && this.ctx.state === 'suspended') {
       const p = this.ctx.resume();
       if (p && p.catch) p.catch(() => {});
+    }
+    this._loadBuffers();
+    // iOSの音声アンロックの定石: 操作の中で無音バッファを1回鳴らしておく
+    if (this.ctx && !this._pinged) {
+      this._pinged = true;
+      try {
+        const s = this.ctx.createBufferSource();
+        s.buffer = this.ctx.createBuffer(1, 1, 22050);
+        s.connect(this.ctx.destination);
+        s.start(0);
+      } catch (e) { /* 失敗しても致命的ではない */ }
     }
     if (this.unlocked) return;
     this.unlocked = true;
@@ -80,9 +110,11 @@ const AudioSys = {
     const now = performance.now();
     if (now - (this.lastPlayed[name] || -1e9) < minInterval * 1000) return;
     this.lastPlayed[name] = now;
-    // 本命: キャッシュ済みバッファから再生（読み込み待ちなし・多重再生も軽い）
+    // 本命: キャッシュ済みバッファから再生（読み込み待ちなし・多重再生も軽い）。
+    // ただし context が running のときだけ使う。iPhone で suspended のまま
+    // バッファ再生すると無音になるため、その場合は下のHTMLAudioへ落とす
     const buf = this.buffers[name];
-    if (this.ctx && buf) {
+    if (this.ctx && buf && this.ctx.state === 'running') {
       try {
         const src = this.ctx.createBufferSource();
         src.buffer = buf;
@@ -94,7 +126,12 @@ const AudioSys = {
         return;
       } catch (e) { /* 失敗時はフォールバックへ */ }
     }
-    // フォールバック: バッファ未用意（読み込み直後など）の間だけ従来方式
+    // フォールバック: バッファ未用意、または context が止まっている間は従来方式
+    // （HTMLAudio 経路は iPhone 実機で鳴ることを確認済み）
+    if (this.ctx && this.ctx.state === 'suspended') {
+      const p = this.ctx.resume();
+      if (p && p.catch) p.catch(() => {});
+    }
     const tpl = this.sounds[name];
     if (!tpl) return;
     try {
