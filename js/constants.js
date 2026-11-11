@@ -34,6 +34,11 @@ const C = {
   PARTICLE_TRIM_TO: 300,
   MAX_GEMS_ON_SCREEN: 100,
   MAX_ENEMIES_ON_SCREEN: 1000,      // 負荷確認のため 300→1000 に増量中（2026-11-11 浩之様の指定）
+  // 出現ペース（負荷確認用の増量仕様。原作は間隔60f→最小10f・1回あたり1→3体）
+  SPAWN_INTERVAL_START_FRAMES: 30,  // 出現間隔の初期値（フレーム）
+  SPAWN_INTERVAL_MIN_FRAMES: 5,     // 出現間隔の下限（フレーム）
+  SPAWN_INTERVAL_STEP_SEC: 10,      // この秒数ごとに間隔を1フレーム短縮
+  SPAWN_BATCH_STEP_SEC: 30,         // この秒数ごとに1回あたりの出現数を+1（上限なし）
 
   NATURAL_HEAL_INTERVAL_MS: 2000,
   NATURAL_HEAL_AMOUNT: 0,           // + HP-subitem level per tick (player.py)

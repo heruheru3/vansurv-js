@@ -336,21 +336,23 @@ return -m <= this.x && this.x <= C.WORLD_WIDTH + m && -m <= this.y && this.y <= 
 }
 
 /* ---------------- 出現ディレクター (game_logic.py spawn_enemies 相当) ----------------
-通常敵: spawnInterval フレームごとに、経過時間で 1→2→3 体を画面端に出現。
-上限300体到達時は古い敵から削除して 80% まで減らす（原作方式）。
+通常敵: spawnInterval フレームごとに画面端へ出現。間隔は時間とともに短縮し、
+1回あたりの出現数は 30 秒ごとに +1 され続ける（負荷確認用の増量仕様。
+原作は間隔 60f→最小10f・1回 1→3 体止まりだった）。
+上限到達時は古い敵から削除して 80% まで減らす（原作方式）。
 ボス: boss_stats.csv の spawn_time（秒）に各1回、画面外近傍に出現。 */
 class SpawnDirector {
 constructor() {
 this.spawnTimerFrames = 0;
-this.spawnIntervalFrames = 60; // 初期値（game_utils.init_game_state）
+this.spawnIntervalFrames = C.SPAWN_INTERVAL_START_FRAMES;
 this.lastDifficultyIncrease = 0; // 秒
 this.spawnedBossNos = new Set();
 }
 
 update(game, dtF) {
-// 難易度: 15秒ごとに出現間隔 -5（最小10）※ main.py 側の実装が正（game_logic の30秒版は未使用）
-if (game.gameTime - this.lastDifficultyIncrease >= 15) {
-this.spawnIntervalFrames = Math.max(10, this.spawnIntervalFrames - 5);
+// 難易度: SPAWN_INTERVAL_STEP_SEC ごとに出現間隔 -1（最小 SPAWN_INTERVAL_MIN_FRAMES）
+if (game.gameTime - this.lastDifficultyIncrease >= C.SPAWN_INTERVAL_STEP_SEC) {
+this.spawnIntervalFrames = Math.max(C.SPAWN_INTERVAL_MIN_FRAMES, this.spawnIntervalFrames - 1);
 this.lastDifficultyIncrease = game.gameTime;
 }
 this.spawnTimerFrames += dtF;
@@ -372,9 +374,8 @@ spawnWave(game) {
 if (game.enemies.length >= C.MAX_ENEMIES_ON_SCREEN) {
 while (game.enemies.length > C.MAX_ENEMIES_ON_SCREEN * 0.8) game.removeEnemy(game.enemies[0]);
 }
-let num = 1;
-if (game.gameTime > 60) num = 2;
-if (game.gameTime > 120) num = 3;
+// 1回あたりの出現数: 30秒ごとに +1（増量仕様。原作は最大3体）
+const num = 1 + Math.floor(game.gameTime / C.SPAWN_BATCH_STEP_SEC);
 const cam = game.camera, margin = 100;
 for (let i = 0; i < num; i++) {
 const side = ['top', 'bottom', 'left', 'right'][randInt(0, 3)];
