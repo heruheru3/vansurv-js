@@ -338,3 +338,27 @@ python3 -m http.server 8000
   SE ON/OFF・連打制限・BGM は従来どおり。
 - 実測: 7種×4要素、再生3回で異なる要素3つを使用（ローテーション）、
   clone 0件、SE OFFで再生0件、エラー0件。
+
+## 2026-11-12 SEを調査に基づくWebAudio実装へ作り替え
+
+- 調査結論（Howler.js / @pixi/sound / WebKit の知見、実機測定記事）:
+  - 要素再生 play() は iPhone では再生開始ごとにメディア再生の立ち上げが走り、
+    1回数百ms級の停止を起こし得る。プール化でも解消しない（実測あり）。
+    要素再生は BGM 専用が標準構成。
+  - WebAudio の無音は「アンロック不完全」が主因。読み込み時に作った
+    AudioContext を resume するだけでは不十分で、状態が running でも
+    無音になる。実績ある実装は、操作（touchend/click/keydown/pointerup）の
+    ハンドラ内で同期的に context を生成し、無音バッファのソースを実際に
+    start して、その onended と running が揃って初めて完了とみなす。
+    pointerdown/touchstart は Safari では操作として認められない。
+- audio.js を全面作り替え: context は最初の操作の中で生成。生成前に
+  navigator.audioSession.type='playback'（検出つき）。アンロック完了は
+  無音ソースの onended + running で判定し、未完了の間の発音は予約して
+  完了直後に鳴らす。デコードは OfflineAudioContext で先行（response.ok で
+  絞らない）。復帰時の無音化（WebKit既知不具合）には次の操作で context を
+  作り直す。再生は BufferSource のみ、開始数上限つき。要素プールは
+  WebAudio が無い環境向けフォールバックとしてのみ残置。
+- game.js: unlock を pointerdown/pointerup/touchend/click/keydown で購読。
+- 実測: 操作前は context 未生成・バッファ7/7デコード済み、タップで
+  seReady=true・running、再生は BufferSource のみ（プール再生・clone 0件）、
+  SE OFF遮断、エラー0件。

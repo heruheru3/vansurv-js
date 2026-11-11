@@ -163,8 +163,12 @@ const Game = {
     AudioSys.init();
     UI.syncSeButton(); // 保存済みの SE ON/OFF をボタン表示へ反映
     const unlock = () => AudioSys.unlock();
-    window.addEventListener('pointerdown', unlock);
-    window.addEventListener('keydown', unlock);
+    // iOS Safari でユーザー操作として認められるのは touchend/click/keydown/
+    // pointerup（touchstart/pointerdown だけでは音声のアンロックが完了しない）。
+    // AudioSys.unlock は呼ばれるたびにアンロック完了まで試み続ける
+    for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) {
+      window.addEventListener(ev, unlock);
+    }
 
     // ドット絵の輪郭を保持する: テクスチャ拡大縮小は全て NEAREST（補間なし）にする
     PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
