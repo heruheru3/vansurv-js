@@ -180,6 +180,8 @@ const Game = {
     this.playerLayer = new PIXI.Container(); this.world.addChild(this.playerLayer);
     this.particles = new Particles(this.world);
     this.damageNumbers = new DamageNumbers(this.world);
+    this.avoidFx = []; // 回避演出（フラッシュ＋テキスト）の進行中リスト
+    this.avoidTextPool = [];
 
     this.resetGame();
     UI.hideLoading();
@@ -445,6 +447,7 @@ const Game = {
     for (const dropped of this.boxManager.collectDroppedItems()) this.addItem(dropped);
     // 11) 演出
     this.particles.update(dtF);
+    this.updateAvoidanceFx(dtF);
     this.damageNumbers.update(dtF);
     if (this.nowMs > this.shakeEndMs) this.shakeIntensity = 0;
     // 12) カメラ（プレイヤーへ lerp 追随）
@@ -654,6 +657,53 @@ const Game = {
     this.shakeIntensity = C.SCREEN_SHAKE_INTENSITY;
   },
 
+  /* 回避成功時の演出（原作 effects/particles.py の AvoidanceParticle + LuckyText）:
+     プレイヤー位置に青い半透明フラッシュ（18フレーム、α最大150、半径 size×1.25→1.0）、
+     頭上にシアンの「Lukey!」が20フレーム上昇表示（フェードイン4f／フェードアウト6f） */
+  spawnAvoidanceFx() {
+    const p = this.player;
+    const s = new PIXI.Sprite(Tex.circle);
+    s.anchor.set(0.5); s.tint = 0x0000ff; s.alpha = 150 / 255;
+    s.position.set(p.x, p.y);
+    const d0 = 2 * p.size * 1.25 * (32 / 30); // Tex.circle の実描画径30pxに対する換算
+    s.width = d0; s.height = d0;
+    this.world.addChild(s);
+    let t = this.avoidTextPool.pop();
+    if (!t) {
+      t = new PIXI.Text('Lukey!', { fontFamily: 'NotoSansJP, sans-serif', fontSize: 14, fill: 0x00ffff, fontWeight: 'bold' });
+      t.anchor.set(0.5, 1);
+      this.world.addChild(t);
+    }
+    t.position.set(p.x, p.y - p.size - 6);
+    t.alpha = 0; t.visible = true;
+    this.avoidFx.push({ s, t, life: 0 });
+  },
+  updateAvoidanceFx(dtF) {
+    const kept = [];
+    for (const fx of this.avoidFx) {
+      fx.life += dtF;
+      if (fx.s) {
+        const fr = fx.life / 18;
+        if (fr >= 1) { this.world.removeChild(fx.s); fx.s.destroy(); fx.s = null; }
+        else {
+          fx.s.alpha = (150 / 255) * (1 - fr);
+          const d = 2 * this.player.size * (1.25 - 0.25 * fr) * (32 / 30);
+          fx.s.width = d; fx.s.height = d;
+        }
+      }
+      if (fx.life >= 20) {
+        fx.t.visible = false;
+        this.avoidTextPool.push(fx.t);
+      } else {
+        fx.t.position.y -= 0.5 * dtF;
+        const remain = 20 - fx.life;
+        fx.t.alpha = fx.life < 4 ? fx.life / 4 : (remain < 6 ? remain / 6 : 1);
+        kept.push(fx);
+      }
+    }
+    this.avoidFx = kept;
+  },
+
   /* プレイヤー vs 敵・敵弾（main.py の接触判定）: 矩形判定、回避抽選、
      ダメージ = max(1, int(敵ダメージ - 防御))、被弾で通常無敵を付与 */
   collidePlayer() {
@@ -665,7 +715,7 @@ const Game = {
       if (Math.abs(p.x - e.x) < pHalf + eHalf && Math.abs(p.y - e.y) < pHalf + eHalf) {
         if (!p.canTakeDamage(this)) continue;
         if (Math.random() < p.avoidance()) {
-          this.particles.burst(p.x, p.y, 0x00ffff, 3);
+          this.spawnAvoidanceFx();
           continue;
         }
         p.hp -= Math.max(1, Math.floor(e.damage - p.defense()));
@@ -684,7 +734,7 @@ const Game = {
           if (idx >= 0) e.projectiles.splice(idx, 1);
           this.releaseProjectileSprite(pr);
           if (!p.canTakeDamage(this)) continue;
-          if (Math.random() < p.avoidance()) { this.particles.burst(p.x, p.y, 0x00ffff, 3); continue; }
+          if (Math.random() < p.avoidance()) { this.spawnAvoidanceFx(); continue; }
           p.hp -= Math.max(1, Math.floor(pr.damage - p.defense()));
           p.setNormalInvincible(this);
           AudioSys.playSound('player_hurt');
