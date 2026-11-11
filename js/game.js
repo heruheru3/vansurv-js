@@ -74,6 +74,10 @@ function generateShapeTextures(renderer) {
   }
 }
 
+/* プレイヤーの表示サイズ(px)。当たり判定（Player.size）とは独立。
+   2026-11-11 浩之様の指定で従来の 48 から 2 倍の 96 に変更。 */
+const PLAYER_SPRITE_SIZE = 96;
+
 /* ---------------- ゲーム本体 ---------------- */
 const Game = {
   state: 'loading',
@@ -99,6 +103,8 @@ const Game = {
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
 
+    // ドット絵の輪郭を保持する: テクスチャ拡大縮小は全て NEAREST（補間なし）にする
+    PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
     this.app = new PIXI.Application({ width: C.SCREEN_WIDTH, height: C.SCREEN_HEIGHT, backgroundColor: 0x000000, antialias: false });
     document.getElementById('stage').prepend(this.app.view);
     this.fitToWindow();
@@ -135,6 +141,7 @@ const Game = {
     // 注意: Pixi 7 の Ticker はコールバックへ deltaTime（数値）を渡す。
     // deltaMS はティッカー本体から読むこと（引数を ticker と誤認すると NaN になる）。
     const ticker = this.app.ticker;
+    ticker.maxFPS = C.FPS; // フレームレート上限は 60fps（constants の FPS）
     ticker.add(() => this.frame(ticker.deltaMS));
     // デバッグ/検証用フック
     window.__vansurv = this;
@@ -229,11 +236,13 @@ const Game = {
     let spr;
     if (Tex.playerFrames.length) {
       spr = new PIXI.Sprite(Tex.playerFrames[0]);
-      spr.width = 48; spr.height = 48;
     } else {
       spr = new PIXI.Sprite(Tex.circle);
-      spr.width = 48; spr.height = 48; spr.tint = 0x32c850;
+      spr.tint = 0x32c850;
     }
+    // 表示サイズは PLAYER_SPRITE_SIZE px。倍率は syncSprites で毎フレーム設定する
+    // （width 一括指定だと向き反転の scale 上書きで倍率が消えるため）
+    spr.width = PLAYER_SPRITE_SIZE; spr.height = PLAYER_SPRITE_SIZE;
     spr.anchor.set(0.5);
     return spr;
   },
@@ -744,9 +753,13 @@ const Game = {
         if (p.animTick >= 6) { p.animTick = 0; p.frameIndex = (p.frameIndex + 1) % Tex.playerFrames.length; }
       } else p.frameIndex = 0;
       spr.texture = Tex.playerFrames[p.frameIndex];
-      spr.scale.x = p.facingRight ? -1 : 1; // 原作: 右向き時に水平反転（width設定済みのため符号のみ）
-      spr.scale.y = 1;
     }
+    // 倍率と向きは毎フレームここで決める（width 指定だけだと反転で倍率が消える）。
+    // 向きは原作準拠: 基準フレームは左向きで、右移動時に水平反転する。
+    const frameW = (spr.texture.frame && spr.texture.frame.width) || 16;
+    const mag = PLAYER_SPRITE_SIZE / frameW;
+    spr.scale.x = (p.facingRight ? -1 : 1) * mag;
+    spr.scale.y = mag;
     spr.visible = !(p.isInvincible(this) && this.state === 'playing' && Math.floor(this.nowMs / 200) % 2 === 0);
 
     // 敵（歩行アニメ: 上下±1px・左右スウェイ・回転。原作 constants の値）
@@ -766,7 +779,9 @@ const Game = {
       e.sprite.position.set(e.x + swayX, e.y + bobY);
       e.sprite.rotation = rot;
       const baseScaleX = e.imageSize / (e.sprite.texture.width || e.imageSize);
-      e.sprite.scale.x = (e.facingRight ? 1 : -1) * Math.abs(baseScaleX);
+      // 向きは原作準拠: 基準画像は左向き（'left'）で、右移動時は反転画像（'right'）を使う。
+      // 符号が逆だと移動方向と逆を向く（2026-11-11 浩之様の指摘で修正）。
+      e.sprite.scale.x = (e.facingRight ? -1 : 1) * Math.abs(baseScaleX);
       e.sprite.blendMode = e.hitFlashTimer > 0 ? PIXI.BLEND_MODES.ADD : PIXI.BLEND_MODES.NORMAL;
       // 敵の弾
       for (const pr of e.projectiles) {
