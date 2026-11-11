@@ -118,23 +118,45 @@ return [preferredX, preferredY];
 
 /* 描画: 16x16タイル単位のチャンクに分け、テクスチャ化して返す。
 ワールド全体を1枚絵にしないので、将来ステージが大きくなっても差し替え可能。 */
+/* 描画: チャンク（16×16タイル）ごとに Canvas へドット絵チップを描き、
+   テクスチャ化して Sprite を返す。チップは隣接タイルを見て岸辺・縁が
+   つながるよう描く（js/mapchips.js）。Canvas が使えない環境では
+   従来のベタ塗り（Graphics→テクスチャ）にフォールバックする。 */
 buildGraphics(renderer) {
 const container = new PIXI.Container();
 const CH = 16; // チャンクの一辺（タイル数）
+const idAt = (x, y) => (x < 0 || y < 0 || x >= this.width || y >= this.height) ? -1 : this.tiles[y][x];
+const useChips = typeof document !== 'undefined' && typeof MapChips !== 'undefined';
 for (let cy = 0; cy < this.height; cy += CH) {
 for (let cx = 0; cx < this.width; cx += CH) {
 const wTiles = Math.min(CH, this.width - cx);
 const hTiles = Math.min(CH, this.height - cy);
+let tex = null;
+if (useChips) {
+try {
+const canvas = document.createElement('canvas');
+canvas.width = wTiles * this.tileSize;
+canvas.height = hTiles * this.tileSize;
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+for (let ty = 0; ty < hTiles; ty++) {
+for (let tx = 0; tx < wTiles; tx++) {
+MapChips.paintTile(ctx, tx * this.tileSize, ty * this.tileSize, idAt, cx + tx, cy + ty);
+}
+}
+tex = PIXI.Texture.from(canvas);
+tex.baseTexture.scaleMode = PIXI.SCALE_MODES.NEAREST;
+} catch (e) { tex = null; }
+}
+if (!tex) { // フォールバック: ベタ塗り
 const g = new PIXI.Graphics();
 for (let ty = 0; ty < hTiles; ty++) {
 for (let tx = 0; tx < wTiles; tx++) {
-const id = this.tiles[cy + ty][cx + tx];
-const sem = this.semantics(id);
+const sem = this.semantics(this.tiles[cy + ty][cx + tx]);
 const px = tx * this.tileSize, py = ty * this.tileSize;
 g.beginFill(sem.color);
 g.drawRect(px, py, this.tileSize, this.tileSize);
 g.endFill();
-// ブロッカー系タイルは内側に縁を描く（原作 _draw_blocker_borders の簡易版）
 if (sem.border!== undefined) {
 g.lineStyle(4, sem.border, 1);
 g.drawRect(px + 2, py + 2, this.tileSize - 4, this.tileSize - 4);
@@ -142,11 +164,12 @@ g.lineStyle(0);
 }
 }
 }
-const tex = renderer.generateTexture(g, { region: new PIXI.Rectangle(0, 0, wTiles * this.tileSize, hTiles * this.tileSize)});
+tex = renderer.generateTexture(g, { region: new PIXI.Rectangle(0, 0, wTiles * this.tileSize, hTiles * this.tileSize)});
+g.destroy();
+}
 const spr = new PIXI.Sprite(tex);
 spr.position.set(cx * this.tileSize, cy * this.tileSize);
 container.addChild(spr);
-g.destroy();
 }
 }
 return container;
