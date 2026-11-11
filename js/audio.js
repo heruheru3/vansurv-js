@@ -7,7 +7,9 @@
    - 音量は constants の DEFAULT_SFX_VOLUME / DEFAULT_MUSIC_VOLUME = 0.1。
    - play_sound には原作と同じ min_interval（デフォルト0.1秒）の連打制限がある。 */
 const AudioSys = {
-  sounds: {},       // name -> テンプレートAudio要素（再生時は clone して多重再生）
+  sounds: {},       // name -> テンプレートAudio要素（WebAudioの用意が無い間のフォールバック）
+  buffers: {},      // name -> AudioBuffer（SEのキャッシュ。再生はここから直接鳴らす）
+  ctx: null,        // AudioContext（SE再生用）
   bgm: null,
   bgmName: null,
   lastPlayed: {},   // name -> 最終再生時刻(ms)
@@ -31,6 +33,27 @@ const AudioSys = {
       a.volume = this.sfxVolume;
       this.sounds[n] = a;
     }
+    this._initWebAudio();
+  },
+
+  /* SEのキャッシュ化（2026-11-12）: 全SEを一度だけ読み込んでデコードし、
+     AudioBuffer として保持する。再生はバッファから直接鳴らすため、
+     再生ごとのメディア読み込み待ち（従来の cloneNode + load）が発生しない。
+     iPhone実機で「SE OFFにするとフレームの止まりが消える」ことを確認済みで、
+     その原因（再生たびの読み込み待ち）を断つのがこの方式。 */
+  _initWebAudio() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      this.ctx = new AC();
+      for (const n of this.SFX_NAMES) {
+        fetch('assets/sfx/' + n + '.wav')
+          .then((r) => r.arrayBuffer())
+          .then((ab) => this.ctx.decodeAudioData(ab))
+          .then((buf) => { this.buffers[n] = buf; })
+          .catch(() => { /* 失敗した音はHTMLAudioフォールバックで鳴らす */ });
+      }
+    } catch (e) { /* WebAudioが使えない環境ではフォールバック動作 */ }
   },
 
   setSfxEnabled(on) {
@@ -41,6 +64,12 @@ const AudioSys = {
 
   /* 最初のユーザー操作から呼ばれる。以後、予約されていたBGMも再生開始する */
   unlock() {
+    // iOSではユーザー操作の中で AudioContext を resume しないと鳴らない。
+    // バックグラウンド復帰で再び止まることもあるため、呼ばれるたびに試みる
+    if (this.ctx && this.ctx.state === 'suspended') {
+      const p = this.ctx.resume();
+      if (p && p.catch) p.catch(() => {});
+    }
     if (this.unlocked) return;
     this.unlocked = true;
     if (this._pendingBgm) { const b = this._pendingBgm; this._pendingBgm = null; this.playBgm(b); }
@@ -51,6 +80,21 @@ const AudioSys = {
     const now = performance.now();
     if (now - (this.lastPlayed[name] || -1e9) < minInterval * 1000) return;
     this.lastPlayed[name] = now;
+    // 本命: キャッシュ済みバッファから再生（読み込み待ちなし・多重再生も軽い）
+    const buf = this.buffers[name];
+    if (this.ctx && buf) {
+      try {
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        const g = this.ctx.createGain();
+        g.gain.value = this.sfxVolume;
+        src.connect(g);
+        g.connect(this.ctx.destination);
+        src.start();
+        return;
+      } catch (e) { /* 失敗時はフォールバックへ */ }
+    }
+    // フォールバック: バッファ未用意（読み込み直後など）の間だけ従来方式
     const tpl = this.sounds[name];
     if (!tpl) return;
     try {

@@ -180,6 +180,9 @@ const Game = {
     try {
       await GameData.loadAll();
       await loadTextures();
+      // 初登場の瞬間にテクスチャ転送でフレームが止まらないよう、敵・ボス画像は
+      // 起動時にまとめてGPUへ載せておく（従来は初登場時に1枚ずつ転送されていた）
+      try { for (const t of Tex.enemies.values()) this.app.renderer.texture.updateTexture(t); } catch (e) { /* 失敗しても従来動作 */ }
     } catch (e) {
       UI.showError('データの読み込みに失敗しました。<br>このゲームはHTTPサーバー経由で開く必要があります（file:// では動作しません）。<br><br>例: <code>python3 -m http.server 8000</code> で起動し、<br>http://localhost:8000/ を開いてください。<br><br>' + e.message);
       return;

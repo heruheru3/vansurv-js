@@ -296,3 +296,17 @@ python3 -m http.server 8000
   env(safe-area-inset-bottom) を加算（ホームインジケータ回避）。
 - 検証（ヘッドレスChrome）: stage高さ＝ビューポート高さ、SEボタン下端が画面内に
   収まること、レンダラ390×844、エラー0件。実機Safariでの確認はユーザー側。
+
+## 2026-11-12 SEのWebAudioキャッシュ化（フレーム停止の本対策）
+
+- 実機切り分け確定: SE OFFにするとフレームの不定期な停止が消えた
+  （原因は再生ごとの cloneNode + メディア読み込み待ちで確定）。
+- audio.js を作り替え: 起動時に全SE（7種）を fetch＋decodeAudioData して
+  AudioBuffer にキャッシュし、再生は BufferSource で直接鳴らす。
+  読み込み待ちゼロ・多重再生も軽量。unlock() で AudioContext を resume
+  （呼ばれるたびに試行）。バッファ未用意の間だけ従来の clone 方式にフォールバック。
+  BGMは従来どおり HTMLAudio（単一要素のループ再生で問題なし）。
+- あわせて敵・ボス画像テクスチャを起動時にGPUへ事前アップロード
+  （初登場時の転送スパイク予防、updateTexture を try/catch でガード）。
+- 実測: バッファ7/7デコード完了、再生で BufferSource 生成・clone 0件、
+  SE OFF時は生成0件、選択画面時点でテクスチャ42枚常駐、エラー0件。
