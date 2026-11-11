@@ -116,7 +116,8 @@ python3 -m http.server 8000
   `syncSprites` の敵 scale.x 符号を原作準拠に修正。プレイヤーは原作と同じ「右移動時に反転」。
 - **拡大縮小の輪郭保持**: `PIXI.settings.SCALE_MODE = NEAREST` を全体に適用し、
   canvas の CSS にも `image-rendering: pixelated` を追加（ドット絵が滲まない）。
-- **プレイヤー表示サイズ 2 倍**: 48 → 96px（`PLAYER_SPRITE_SIZE`、当たり判定とは独立）。
+- **プレイヤー表示サイズ**: 一時 96px にしたが大きくなりすぎたため 48px に戻した
+  （`PLAYER_SPRITE_SIZE`、当たり判定とは独立）。
   あわせて、向き反転の scale 上書きで倍率が消え実際は 16px で描かれていた問題も解消した
   （倍率と向きは毎フレーム実寸ベースで設定する方式に変更）。
 - **FPS**: Ticker の `maxFPS` を 60（`C.FPS`）に設定。

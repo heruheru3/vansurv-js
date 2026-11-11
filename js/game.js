@@ -75,8 +75,9 @@ function generateShapeTextures(renderer) {
 }
 
 /* プレイヤーの表示サイズ(px)。当たり判定（Player.size）とは独立。
-   2026-11-11 浩之様の指定で従来の 48 から 2 倍の 96 に変更。 */
-const PLAYER_SPRITE_SIZE = 96;
+   2026-11-11 一時 96 にしたが、実描画が 16px だった分と合わせて大きく
+   なりすぎたため、浩之様の指定で本来の設定値 48 に戻した。 */
+const PLAYER_SPRITE_SIZE = 48;
 
 /* ---------------- ゲーム本体 ---------------- */
 const Game = {
