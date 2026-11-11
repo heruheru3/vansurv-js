@@ -178,6 +178,7 @@ _tryMove(game, nx, ny) {
 const stage = game.stage;
 const h = Math.floor(this.size / 2);
 const blockedByEnemy = (px, py) => {
+if (this.noclipMode) return false; // ハマり脱出中は敵同士の重なりも無視する（重なったまま固まる個体の救済）
 const cell = 64;
 const cx = Math.floor(px / cell), cy = Math.floor(py / cell);
 for (let gy = cy - 1; gy <= cy + 1; gy++) {
@@ -256,7 +257,9 @@ if (game.nowMs - this.lastAttackMs < this.attackCooldown) return;
 const p = game.player;
 const angle = Math.atan2(p.y - this.y, p.x - this.x);
 if (!this.isBoss && this.projectiles.length >= 5) this.projectiles.shift(); // 通常敵は同時5発まで
-this.projectiles.push(new EnemyProjectile(this.x, this.y, angle, Math.floor(this.damage / 2), this.behaviorType, this.isBoss, this.projectileSpeed));
+const pr = new EnemyProjectile(this.x, this.y, angle, Math.floor(this.damage / 2), this.behaviorType, this.isBoss, this.projectileSpeed);
+pr.createdMs = game.nowMs; // 生成時刻は発射時点で確定させる（描画側で付けると初回判定で即期限切れになる）
+this.projectiles.push(pr);
 this.lastAttackMs = game.nowMs;
 }
 
@@ -264,6 +267,7 @@ updateProjectiles(game, dtF) {
 const p = game.player;
 const kept = [];
 for (const pr of this.projectiles) {
+if (pr.createdMs < 0) pr.createdMs = game.nowMs; // 未設定なら寿命をここから数える
 if (pr.isExpired(game)) continue;
 if (!pr.isOnScreen()) continue;
 // 通常弾はプレイヤーから600px超で消去（ボス弾は無制限）
@@ -335,6 +339,26 @@ return -m <= this.x && this.x <= C.WORLD_WIDTH + m && -m <= this.y && this.y <= 
 }
 }
 
+/* 出現位置が既存の敵と重なっている場合、近くの空いた安全な位置へずらす。
+安全位置探索は決定的で、障害物際では多数の出現が同一点に集約され、
+重なった敵同士が身動きできなくなるため、その予防（最大8回試行）。 */
+function scatterIfStacked(game, x, y) {
+const overlaps = (px, py) => game.queryEnemies(px, py, 96).some(o => {
+const d = (o.size + 32) * C.ENEMY_COLLISION_SEPARATION_FACTOR;
+const dx = px - o.x, dy = py - o.y;
+return dx * dx + dy * dy < d * d;
+});
+if (!overlaps(x, y)) return [x, y];
+for (let i = 0; i < 8; i++) {
+const a = Math.random() * Math.PI * 2, r = 28 + Math.random() * 44;
+const tx = x + Math.cos(a) * r, ty = y + Math.sin(a) * r;
+if (tx < 50 || tx > C.WORLD_WIDTH - 50 || ty < 50 || ty > C.WORLD_HEIGHT - 50) continue;
+if (!game.stage.isPositionSafe(tx, ty, 32)) continue;
+if (!overlaps(tx, ty)) return [tx, ty];
+}
+return [x, y];
+}
+
 /* ---------------- 出現ディレクター (game_logic.py spawn_enemies 相当) ----------------
 通常敵: spawnInterval フレームごとに画面端へ出現。間隔は時間とともに短縮し、
 1回あたりの出現数は 30 秒ごとに +1 され続ける（負荷確認用の増量仕様。
@@ -387,6 +411,7 @@ else { x = Math.floor(cam.x) + C.SCREEN_WIDTH + margin; y = randInt(Math.floor(c
 x = Math.max(50, Math.min(C.WORLD_WIDTH - 50, x));
 y = Math.max(50, Math.min(C.WORLD_HEIGHT - 50, y));
 [x, y] = game.stage.findSafeSpawnPosition(x, y, 32);
+[x, y] = scatterIfStacked(game, x, y);
 const [enemyNo, rule] = GameData.selectEnemyNo(game.gameTime);
 const stat = GameData.enemyStats.get(enemyNo);
 if (!stat) continue;

@@ -791,7 +791,7 @@ const Game = {
           s.anchor.set(0.5); s.width = pr.size; s.height = pr.size; s.tint = pr.color;
           pr.sprite = s;
           this.enemyLayer.addChild(s);
-          pr.createdMs = this.nowMs;
+          if (pr.createdMs < 0) pr.createdMs = this.nowMs;
         }
         pr.sprite.position.set(pr.x, pr.y);
       }
