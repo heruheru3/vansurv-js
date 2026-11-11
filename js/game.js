@@ -169,6 +169,7 @@ const Game = {
     PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
     this.app = new PIXI.Application({ width: window.innerWidth, height: window.innerHeight, backgroundColor: 0x000000, antialias: false });
     document.getElementById('stage').prepend(this.app.view);
+    this.zoom = C.ZOOM_DEFAULT; // 既定は少し引いた画角（浩之様の指定）
     this.applyViewSize();
     window.addEventListener('resize', () => this.applyViewSize());
     window.addEventListener('orientationchange', () => this.applyViewSize());
@@ -186,6 +187,7 @@ const Game = {
 
     // レイヤー構成（奥→手前）: マップ / ジェム・アイテム / ボックス / 敵 / 攻撃 / プレイヤー / 演出
     this.world = new PIXI.Container();
+    this.world.scale.set(this.zoom);
     this.app.stage.addChild(this.world);
     this.mapLayer = this.stage.buildGraphics(this.app.renderer);
     this.world.addChild(this.mapLayer);
@@ -217,7 +219,7 @@ const Game = {
     // 注意: Pixi 7 の Ticker はコールバックへ deltaTime（数値）を渡す。
     // deltaMS はティッカー本体から読むこと（引数を ticker と誤認すると NaN になる）。
     const ticker = this.app.ticker;
-    ticker.maxFPS = C.FPS; // フレームレート上限は 60fps（constants の FPS）
+    ticker.maxFPS = 0; // 表示リフレッシュレートに任せる（ロジックは frame() が固定刻みで進める）
     ticker.add(() => this.frame(ticker.deltaMS));
     // デバッグ/検証用フック
     window.__vansurv = this;
@@ -229,9 +231,22 @@ const Game = {
      ミニマップ枠など C.SCREEN_* を参照する全ロジックが追従する。 */
   applyViewSize() {
     const w = window.innerWidth, h = window.innerHeight;
-    C.SCREEN_WIDTH = w; C.SCREEN_HEIGHT = h;
+    const z = this.zoom || C.ZOOM_DEFAULT;
+    // C.SCREEN_* は「見えているワールド範囲（ワールド座標単位）」。
+    // ズームを掛けると同じウインドウでより広い／狭い範囲が見える
+    C.SCREEN_WIDTH = Math.round(w / z); C.SCREEN_HEIGHT = Math.round(h / z);
     if (this.app) this.app.renderer.resize(w, h);
+    if (this.world) this.world.scale.set(z);
     if (typeof UI !== 'undefined' && UI.layoutResultStage) UI.layoutResultStage();
+  },
+
+  /* ズーム変更（PC: ホイール / スマホ: ピンチ）。カメラはプレイヤー中心に
+     追従するので、拡縮は自然にプレイヤーを中心に行われる */
+  setZoom(z) {
+    const nz = Math.max(C.ZOOM_MIN, Math.min(C.ZOOM_MAX, z));
+    if (nz === this.zoom) return;
+    this.zoom = nz;
+    this.applyViewSize();
   },
 
   /* ---------- 入力 ---------- */
@@ -249,30 +264,58 @@ const Game = {
       this.mouseScreen.x = (e.clientX - rect.left) / rect.width * C.SCREEN_WIDTH;
       this.mouseScreen.y = (e.clientY - rect.top) / rect.height * C.SCREEN_HEIGHT;
     });
-    this.initVirtualPad();
+    // ズーム（PC）: プレイ中のホイールで拡大・縮小
+    window.addEventListener('wheel', (e) => {
+      if (this.state !== 'playing' || (typeof UI !== 'undefined' && UI.menu)) return;
+      this.setZoom((this.zoom || C.ZOOM_DEFAULT) * (e.deltaY < 0 ? 1.12 : 1 / 1.12));
+      e.preventDefault();
+    }, { passive: false });
+    this.initTouchControls();
   },
 
-  /* バーチャルパッド（タッチ操作）: キャンバスに触れた位置を中心にパッドが
-     出て、ドラッグした方向へ移動できる（フローティング式）。
+  /* タッチ操作: 1本指=バーチャルパッド（触れた位置を中心にパッドが出て、
+     ドラッグした方向へ移動できるフローティング式）、2本指=ピンチでズーム。
      メニュー等のオーバーレイ表示中はそちらがタッチを受けるので干渉しない。 */
-  initVirtualPad() {
+  initTouchControls() {
     this.padId = null; this.padOx = 0; this.padOy = 0; this.padVec = null;
+    this.touches = new Map(); // identifier -> {x, y}
+    this.pinchDist = 0;
     this.vpadEl = document.getElementById('vpad');
     this.vpadKnob = document.getElementById('vpad-knob');
     const view = this.app.view;
+    const hidePad = () => { this.padId = null; this.padVec = null; this.vpadEl.style.display = 'none'; };
+    this._hidePad = hidePad;
     view.addEventListener('touchstart', (e) => {
-      if (this.state !== 'playing' || this.padId !== null) return;
+      for (const t of e.changedTouches) this.touches.set(t.identifier, { x: t.clientX, y: t.clientY });
+      if (this.state !== 'playing') return;
       this.touchUsed = true; // 以後はマウス追随を無効化（タッチ端末では意味がないため）
-      const t = e.changedTouches[0];
-      this.padId = t.identifier; this.padOx = t.clientX; this.padOy = t.clientY;
-      this.padVec = null;
-      this.vpadEl.style.left = t.clientX + 'px';
-      this.vpadEl.style.top = t.clientY + 'px';
-      this.vpadKnob.style.transform = 'translate(0px, 0px)';
-      this.vpadEl.style.display = 'block';
+      if (this.touches.size === 2) {
+        // 2本目が触れたらピンチ開始: パッドは解除する
+        hidePad();
+        const [a, b] = [...this.touches.values()];
+        this.pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+      } else if (this.touches.size === 1 && this.padId === null) {
+        const t = e.changedTouches[0];
+        this.padId = t.identifier; this.padOx = t.clientX; this.padOy = t.clientY;
+        this.padVec = null;
+        this.vpadEl.style.left = t.clientX + 'px';
+        this.vpadEl.style.top = t.clientY + 'px';
+        this.vpadKnob.style.transform = 'translate(0px, 0px)';
+        this.vpadEl.style.display = 'block';
+      }
       e.preventDefault();
     }, { passive: false });
     view.addEventListener('touchmove', (e) => {
+      for (const t of e.changedTouches) {
+        if (this.touches.has(t.identifier)) this.touches.set(t.identifier, { x: t.clientX, y: t.clientY });
+      }
+      if (this.touches.size === 2 && this.pinchDist > 0) {
+        const [a, b] = [...this.touches.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d > 0) { this.setZoom((this.zoom || C.ZOOM_DEFAULT) * (d / this.pinchDist)); this.pinchDist = d; }
+        e.preventDefault();
+        return;
+      }
       if (this.padId === null) return;
       for (const t of e.changedTouches) {
         if (t.identifier !== this.padId) continue;
@@ -284,16 +327,16 @@ const Game = {
         e.preventDefault();
       }
     }, { passive: false });
-    const endPad = (e) => {
+    const endTouch = (e) => {
       for (const t of e.changedTouches) {
-        if (t.identifier !== this.padId) continue;
-        this.padId = null; this.padVec = null;
-        this.vpadEl.style.display = 'none';
-        e.preventDefault();
+        this.touches.delete(t.identifier);
+        if (t.identifier === this.padId) hidePad();
       }
+      if (this.touches.size < 2) this.pinchDist = 0;
+      e.preventDefault();
     };
-    view.addEventListener('touchend', endPad, { passive: false });
-    view.addEventListener('touchcancel', endPad, { passive: false });
+    view.addEventListener('touchend', endTouch, { passive: false });
+    view.addEventListener('touchcancel', endTouch, { passive: false });
   },
   mouseWorld() {
     return { x: this.mouseScreen.x + this.camera.x, y: this.mouseScreen.y + this.camera.y };
@@ -486,16 +529,25 @@ const Game = {
 
   /* ---------- メインフレーム ---------- */
   frame(deltaMS) {
-    const dtMs = Math.min(deltaMS, 50);       // DELTA_TIME_CAP 相当
-    const dtF = dtMs / (1000 / 60);            // 60fps基準のフレーム換算
     this.fps = this.fps * 0.95 + (1000 / Math.max(deltaMS, 0.01)) * 0.05;
-    if (this.state === 'playing') {
-      this.nowMs += dtMs;
-      this.gameTime += dtMs / 1000;
-      this.update(dtF);
-      if (this.gameTime >= C.SURVIVAL_TIME && this.state === 'playing') this.onGameClear();
+    // 固定タイムステップ: ロジックは常に 1/60 秒刻みで進める（2026-11-11 滑らかさ対策）。
+    // 従来は実フレーム時間そのままで進めていたため、表示リフレッシュレート
+    // （60Hz/120Hz）や一時的な処理落ちで1フレームの進み幅がブレてガタついた。
+    // 論理ステップを均一にすると、どの画面でも動きが一定になる。
+    const STEP_MS = 1000 / 60;
+    this.accMs = Math.min((this.accMs || 0) + deltaMS, 100); // 溜め込み上限（復帰時の暴走防止）
+    let steps = 0;
+    while (this.accMs >= STEP_MS && steps < 4) {
+      this.accMs -= STEP_MS; steps++;
+      if (this.state === 'playing') {
+        this.nowMs += STEP_MS;
+        this.gameTime += STEP_MS / 1000;
+        this.update(1);
+        if (this.gameTime >= C.SURVIVAL_TIME && this.state === 'playing') this.onGameClear();
+      }
     }
-    this.syncSprites(dtF);
+    if (steps >= 4) this.accMs = 0; // 処理落ち時は余りを捨てる（スローモーション化を防ぐ）
+    this.syncSprites(steps);
     UI.updateHUD(this);
   },
 
@@ -1144,7 +1196,9 @@ const Game = {
       const inten = this.shakeIntensity * ratio;
       shX = randFloat(-inten, inten); shY = randFloat(-inten, inten);
     }
-    this.world.position.set(-Math.round(this.camera.x + shX), -Math.round(this.camera.y + shY));
+    // ワールドコンテナは scale=ズーム のため、位置はカメラ×ズームで引く
+    const z = this.zoom || 1;
+    this.world.position.set(-Math.round((this.camera.x + shX) * z), -Math.round((this.camera.y + shY) * z));
 
     // プレイヤー（歩行フレーム切替・無敵点滅・向き反転）
     const spr = p.sprite;

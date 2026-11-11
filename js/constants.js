@@ -6,6 +6,11 @@ const C = {
   // 書き換える（解像度＝ウインドウサイズ。縦画面・正方形でもそのまま遊べる）
   SCREEN_WIDTH: 1280,
   SCREEN_HEIGHT: 720,
+  // ズーム（ワールド→画面の倍率）。既定は少し引いた画角（2026-11-11 浩之様の指定）。
+  // ゲーム中はホイール／ピンチで ZOOM_MIN..ZOOM_MAX の範囲で変更できる
+  ZOOM_DEFAULT: 0.8,
+  ZOOM_MIN: 0.45,
+  ZOOM_MAX: 1.6,
   FPS: 60,
   SURVIVAL_TIME: 600,               // seconds to survive = game clear（負荷確認のため 180→600 に延長中。2026-11-11 浩之様の指定）
 

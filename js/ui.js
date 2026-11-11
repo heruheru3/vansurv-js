@@ -46,20 +46,29 @@ const UI = {
   updateHUD(game) {
     const p = game.player;
     if (!p) return;
+    // DOM書き込みは「値が変わった時だけ」にする（毎フレームの再描画は
+    // モバイルでレイアウト再計算を誘発し、ガタつきの一因になるため）
+    const hc = this._hudCache || (this._hudCache = {});
+    const put = (key, el, prop, val) => { if (hc[key] !== val) { hc[key] = val; el[prop] = val; } };
+    const putStyle = (key, el, prop, val) => { if (hc[key] !== val) { hc[key] = val; el.style[prop] = val; } };
     const maxHp = p.maxHp();
     const hpRatio = Math.max(0, p.hp / maxHp);
-    this.els['hp-bar'].style.width = (hpRatio * 100).toFixed(1) + '%';
-    this.els['hp-bar'].style.background = hpRatio > 0.3 ? '#3ecf5a' : '#e33';
-    this.els['hp-text'].textContent = 'HP ' + Math.ceil(p.hp) + ' / ' + maxHp;
+    putStyle('hpw', this.els['hp-bar'], 'width', (hpRatio * 100).toFixed(1) + '%');
+    putStyle('hpbg', this.els['hp-bar'], 'background', hpRatio > 0.3 ? '#3ecf5a' : '#e33');
+    put('hpt', this.els['hp-text'], 'textContent', 'HP ' + Math.ceil(p.hp) + ' / ' + maxHp);
     const xpRatio = Math.max(0, Math.min(1, p.exp / p.expToNextLevel));
-    this.els['xp-bar'].style.width = (xpRatio * 100).toFixed(1) + '%';
-    this.els['lv-text'].textContent = 'Lv ' + p.level;
+    putStyle('xpw', this.els['xp-bar'], 'width', (xpRatio * 100).toFixed(1) + '%');
+    put('lvt', this.els['lv-text'], 'textContent', 'Lv ' + p.level);
     const remain = Math.max(0, C.SURVIVAL_TIME - game.gameTime);
     const mm = Math.floor(remain / 60), ss = Math.floor(remain % 60);
-    this.els['timer-text'].textContent = mm + ':' + String(ss).padStart(2, '0');
-    this.els['kills-text'].textContent = '撃破 ' + game.kills;
-    this.els['money-text'].textContent = game.sessionMoney + ' G';
-    this.els['fps-text'].textContent = Math.round(game.fps) + ' FPS / 敵 ' + game.enemies.length;
+    put('tmt', this.els['timer-text'], 'textContent', mm + ':' + String(ss).padStart(2, '0'));
+    put('klt', this.els['kills-text'], 'textContent', '撃破 ' + game.kills);
+    put('mnt', this.els['money-text'], 'textContent', game.sessionMoney + ' G');
+    const nowMs = performance.now();
+    if (nowMs - (hc.fpsMs || 0) >= 250) {
+      hc.fpsMs = nowMs;
+      put('fst', this.els['fps-text'], 'textContent', Math.round(game.fps) + ' FPS / 敵 ' + game.enemies.length);
+    }
 
     // 所持品アイコン列（武器=金枠、サブアイテム=青枠、レベル付き）
     if (game._hudItemsDirty) {

@@ -119,7 +119,9 @@
     background: rgba(255,255,255,0.35); border: 2px solid rgba(255,255,255,0.6); }
   /* ---------- 小さい画面向けのUI調整（重なり・極小化の防止） ---------- */
   .overlay { padding: 12px; overflow-y: auto; }
-  #menu-grid.rowcards { flex-wrap: wrap; justify-content: center; max-width: 100%; }
+  /* レベルアップ等の横並びカードは幅を均一にする（内容で幅がバラつかないよう grid 化） */
+  #menu-grid.rowcards { display: grid; grid-template-columns: repeat(auto-fit, 190px);
+    justify-content: center; gap: 12px; width: 100%; }
   @media (max-width: 1080px) {
     /* 中央タイマーが左上のHP/XPバーと重ならないよう、バーの下へ逃がす */
     #hud-center { top: 52px; }
@@ -131,6 +133,7 @@
     #hud-top { width: min(300px, 48vw); }
     .overlay h1 { font-size: 24px; margin-bottom: 12px; }
     #menu-grid.grid3x3 { grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+    #menu-grid.rowcards { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
     .card { width: auto; min-height: 0; padding: 8px; }
     .card img { width: 36px; height: 36px; }
     .card-title { font-size: 14px; }
