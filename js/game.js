@@ -614,7 +614,7 @@ const Game = {
       this.spawnGem(e.x, e.y, 1);
     } else {
       const roll = Math.random();
-      if (roll < C.HEAL_ITEM_DROP_RATE) { this.addItem(new GameItem(e.x, e.y, 'heal', this.nowMs)); AudioSys.playSound('item_drop'); }
+      if (roll < C.HEAL_ITEM_DROP_RATE) { this.addItem(new GameItem(e.x, e.y, 'heal', this.nowMs)); } // ドロップ音は鳴らさない（2026-11-11 浩之様の指定）
       else if (roll < C.HEAL_ITEM_DROP_RATE + C.BOMB_ITEM_DROP_RATE) this.addItem(new GameItem(e.x, e.y, 'bomb', this.nowMs));
       else if (roll < C.HEAL_ITEM_DROP_RATE + C.BOMB_ITEM_DROP_RATE + this.player.magnetDropRate()) this.addItem(new GameItem(e.x, e.y, 'magnet', this.nowMs));
       else this.spawnGem(e.x, e.y, 1);

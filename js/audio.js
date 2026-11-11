@@ -17,7 +17,7 @@ const AudioSys = {
   _pendingBgm: null,
 
   // assets/sfx/ に存在する効果音（core/audio.py が使う名前と同一）
-  SFX_NAMES: ['enemy_hurt', 'player_hurt', 'gem_pickup', 'heal', 'bomb', 'item_drop', 'powerup', 'box_break'],
+  SFX_NAMES: ['enemy_hurt', 'player_hurt', 'gem_pickup', 'heal', 'bomb', 'powerup', 'box_break'], // item_drop は鳴らさない（2026-11-11 浩之様の指定）
 
   init() {
     for (const n of this.SFX_NAMES) {
