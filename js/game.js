@@ -174,6 +174,7 @@ const Game = {
     this.applyViewSize();
     window.addEventListener('resize', () => this.applyViewSize());
     window.addEventListener('orientationchange', () => this.applyViewSize());
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => this.applyViewSize());
     this.initInput();
 
     try {
@@ -231,7 +232,11 @@ const Game = {
      C.SCREEN_WIDTH/HEIGHT を実サイズへ更新すると、カメラ・スポーン範囲・
      ミニマップ枠など C.SCREEN_* を参照する全ロジックが追従する。 */
   applyViewSize() {
-    const w = window.innerWidth, h = window.innerHeight;
+    // iPhone Safari のツールバー表示/非表示で実際に見える範囲が変わるため、
+    // visualViewport（見えている領域そのもの）を優先する
+    const vv = window.visualViewport;
+    const w = Math.round(vv ? vv.width : window.innerWidth);
+    const h = Math.round(vv ? vv.height : window.innerHeight);
     const z = this.zoom || C.ZOOM_DEFAULT;
     // C.SCREEN_* は「見えているワールド範囲（ワールド座標単位）」。
     // ズームを掛けると同じウインドウでより広い／狭い範囲が見える

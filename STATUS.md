@@ -285,3 +285,14 @@ python3 -m http.server 8000
   SE ON/OFF ボタンを追加（AudioSys.sfxEnabled、localStorage 'vansurv_se' に保存）。
   OFF の間 playSound は即座に戻り、メディア読み込みが一切発生しない。
 - 実測: ON時は再生で clone 発生、OFF切替後は clone 0件・設定保存を確認、エラー0件。
+
+## 2026-11-11 iPhone Safariで下部UIが見えない問題への対応
+
+- 原因: #stage の height:100vh が Safari のツールバー裏まで含んだ高さになり、
+  下端のUI（所持品・FPS・SEボタン）がツールバーの背後に隠れる。
+- 対応: #stage に height:100dvh（vhフォールバック併記）を採用し、
+  applyViewSize は visualViewport（実際に見えている領域）を優先、
+  visualViewport の resize でも追従。#hud-bottom / #se-toggle の下オフセットに
+  env(safe-area-inset-bottom) を加算（ホームインジケータ回避）。
+- 検証（ヘッドレスChrome）: stage高さ＝ビューポート高さ、SEボタン下端が画面内に
+  収まること、レンダラ390×844、エラー0件。実機Safariでの確認はユーザー側。
