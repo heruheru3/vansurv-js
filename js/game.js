@@ -72,6 +72,34 @@ function generateShapeTextures(renderer) {
       g.endFill();
     }, 24, 24);
   }
+  // 敵弾テクスチャ（原作 EnemyProjectile.draw の多層エフェクトを再現し、色ごとにキャッシュ）
+  const addC = (col, amt) => {
+    const r = Math.min(255, ((col >> 16) & 255) + amt), g = Math.min(255, ((col >> 8) & 255) + amt), b = Math.min(255, (col & 255) + amt);
+    return (r << 16) | (g << 8) | b;
+  };
+  const mulC = (col, f) => {
+    const r = Math.min(255, Math.round(((col >> 16) & 255) * f)), g = Math.min(255, Math.round(((col >> 8) & 255) * f)), b = Math.min(255, Math.round((col & 255) * f));
+    return (r << 16) | (g << 8) | b;
+  };
+  const mkBullet = (col, isBoss) => mk((g) => {
+    if (!isBoss) { // 通常弾: 白輪郭＋発光＋本体＋コア＋ハイライト（直径22）
+      g.lineStyle(3, 0xffffff, 80 / 255); g.drawCircle(11, 11, 9.5); g.lineStyle(0);
+      g.beginFill(addC(col, 80), 80 / 255); g.drawCircle(11, 11, 10); g.endFill();
+      g.beginFill(col, 200 / 255); g.drawCircle(11, 11, 9); g.endFill();
+      g.beginFill(addC(col, 40), 1); g.drawCircle(11, 11, 5); g.endFill();
+      g.beginFill(0xffffff, 200 / 255); g.drawCircle(11, 11, 3); g.endFill();
+    } else { // ボス弾: 光輪＋コア＋中心（原作は半径=size で描くため直径48）
+      g.beginFill(mulC(col, 0.5), 60 / 255); g.drawCircle(24, 24, 24); g.endFill();
+      g.beginFill(col, 180 / 255); g.drawCircle(24, 24, 12); g.endFill();
+      g.beginFill(mulC(col, 1.2), 220 / 255); g.drawCircle(24, 24, 8); g.endFill();
+    }
+  }, isBoss ? 48 : 22, isBoss ? 48 : 22);
+  Tex.bullets = new Map();
+  for (let type = 1; type <= 4; type++) for (let lv = 1; lv <= 5; lv++) {
+    const col = bulletColor(type, lv);
+    Tex.bullets.set(col + '|0', mkBullet(col, false));
+  }
+  Tex.bullets.set(0xffd700 + '|1', mkBullet(0xffd700, true));
 }
 
 /* プレイヤーの表示サイズ(px)。当たり判定（Player.size）とは独立。
@@ -262,6 +290,7 @@ const Game = {
     const i = this.enemies.indexOf(e);
     if (i >= 0) this.enemies.splice(i, 1);
     for (const pr of e.projectiles) this.releaseProjectileSprite(pr);
+    for (const pr of e.deadProjectiles || []) this.releaseProjectileSprite(pr);
     if (e.sprite) { this.enemyLayer.removeChild(e.sprite); e.sprite.destroy(); e.sprite = null; }
   },
   releaseProjectileSprite(pr) {
@@ -385,6 +414,9 @@ const Game = {
       if (e.isBoss) { if (e.isBossOffScreen()) e.respawnNearPlayer(this); }
       else if (e.isOffScreen()) this.removeEnemy(e);
     }
+    // 7.5) 画面外の敵の回収・リポップ（一定間隔ごと）
+    this.repopTimerSec = (this.repopTimerSec || 0) + dtF / 60;
+    if (this.repopTimerSec >= C.OFFSCREEN_REPOP_INTERVAL_SEC) { this.repopTimerSec = 0; this.sweepRepop(); }
     // 8) プレイヤー被弾（接触・敵弾）
     this.collidePlayer();
     if (p.hp <= 0 && this.state === 'playing') { this.onGameOver(); return; }
@@ -402,6 +434,37 @@ const Game = {
     const ty = clamp(p.y - C.SCREEN_HEIGHT / 2, 0, C.WORLD_HEIGHT - C.SCREEN_HEIGHT);
     this.camera.x += (tx - this.camera.x) * C.CAMERA_LERP;
     this.camera.y += (ty - this.camera.y) * C.CAMERA_LERP;
+  },
+
+  /* 現在の難易度レベル（経過時間帯）での画面付近の敵数上限 */
+  onscreenCap() {
+    let cap = C.ONSCREEN_CAP_STAGES[0][1];
+    for (const [t, c] of C.ONSCREEN_CAP_STAGES) if (this.gameTime >= t) cap = c;
+    return cap;
+  },
+  /* 画面＋マージン内にいる通常敵の数（出現上限の判定用） */
+  screenPopulation() {
+    const m = C.OFFSCREEN_REPOP_MARGIN, cam = this.camera;
+    let n = 0;
+    for (const e of this.enemies) {
+      if (e.isBoss) continue;
+      if (e.x >= cam.x - m && e.x <= cam.x + C.SCREEN_WIDTH + m && e.y >= cam.y - m && e.y <= cam.y + C.SCREEN_HEIGHT + m) n++;
+    }
+    return n;
+  },
+  /* 画面外に取り残された敵を回収し、上限に余裕があれば同じ種類を画面端へ再出現させる。
+     画面外で固まった敵が溜まり続けるのを防ぐ（2026-11-11 浩之様の指定）。 */
+  sweepRepop() {
+    const m = C.OFFSCREEN_REPOP_MARGIN, cam = this.camera;
+    const inArea = (e) => e.x >= cam.x - m && e.x <= cam.x + C.SCREEN_WIDTH + m && e.y >= cam.y - m && e.y <= cam.y + C.SCREEN_HEIGHT + m;
+    let pop = this.screenPopulation();
+    const cap = this.onscreenCap();
+    for (const e of [...this.enemies]) {
+      if (e.isBoss || inArea(e)) continue;
+      const no = e.enemyNo;
+      this.removeEnemy(e);
+      if (no != null && pop < cap) { this.director.respawnAtEdge(this, no); pop++; }
+    }
   },
 
   rebuildGrid() {
@@ -763,6 +826,13 @@ const Game = {
     spr.scale.y = mag;
     spr.visible = !(p.isInvincible(this) && this.state === 'playing' && Math.floor(this.nowMs / 200) % 2 === 0);
 
+    // 消滅した敵弾のスプライト解放（敵の可視状態に依らず毎フレーム処理する）
+    for (const e of this.enemies) {
+      if (!e.deadProjectiles.length) continue;
+      for (const pr of e.deadProjectiles) this.releaseProjectileSprite(pr);
+      e.deadProjectiles.length = 0;
+    }
+
     // 敵（歩行アニメ: 上下±1px・左右スウェイ・回転。原作 constants の値）
     const camL = this.camera.x - C.DRAWING_MARGIN, camR = this.camera.x + C.SCREEN_WIDTH + C.DRAWING_MARGIN;
     const camT = this.camera.y - C.DRAWING_MARGIN, camB = this.camera.y + C.SCREEN_HEIGHT + C.DRAWING_MARGIN;
@@ -787,8 +857,9 @@ const Game = {
       // 敵の弾
       for (const pr of e.projectiles) {
         if (!pr.sprite) {
-          const s = new PIXI.Sprite(Tex.circle);
-          s.anchor.set(0.5); s.width = pr.size; s.height = pr.size; s.tint = pr.color;
+          const tex = (Tex.bullets && Tex.bullets.get(pr.color + '|' + (pr.isBossBullet ? 1 : 0))) || Tex.circle;
+          const s = new PIXI.Sprite(tex);
+          s.anchor.set(0.5); s.width = pr.drawSize; s.height = pr.drawSize;
           pr.sprite = s;
           this.enemyLayer.addChild(s);
           if (pr.createdMs < 0) pr.createdMs = this.nowMs;

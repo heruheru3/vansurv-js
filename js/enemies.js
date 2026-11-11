@@ -33,6 +33,13 @@ const hue = { 1: 0, 2: 240, 3: 120, 4: 30}[behaviorType] || 240;
 return hsvToRgbInt(hue, saturation, 200);
 }
 
+/* 敵弾の色（原作 _setup_bullet_color: 色相は行動タイプ、彩度は敵レベルで上昇） */
+function bulletColor(behaviorType, enemyLevel) {
+const saturation = 0.2 + (Math.max(1, enemyLevel) - 1) * 0.2;
+const hue = { 1: 0, 2: 240, 3: 120, 4: 30 }[behaviorType] || 240;
+return hsvToRgbInt(hue, Math.min(1, saturation), 200);
+}
+
 /* ---------------- 行動パターンレジストリ ----------------
 各振る舞いは「移動先候補 [nx, ny]」を返す。障害物・敵同士の衝突解決は
 Enemy.move() の共通処理が行うので、振る舞い側は行き先だけ決めればよい。
@@ -144,6 +151,7 @@ this.targetDistance = 200;
 this.initialDirection = null;
 this.velocityX = 0; this.velocityY = 0;
 this.projectiles = [];
+this.deadProjectiles = []; // 消滅した弾（描画側でスプライト解放待ち）
 this.lastAttackMs = 0;
 // ノックバック（enemy.py apply_knockback / update_knockback）
 this.knockbackVx = 0; this.knockbackVy = 0;
@@ -257,7 +265,7 @@ if (game.nowMs - this.lastAttackMs < this.attackCooldown) return;
 const p = game.player;
 const angle = Math.atan2(p.y - this.y, p.x - this.x);
 if (!this.isBoss && this.projectiles.length >= 5) this.projectiles.shift(); // 通常敵は同時5発まで
-const pr = new EnemyProjectile(this.x, this.y, angle, Math.floor(this.damage / 2), this.behaviorType, this.isBoss, this.projectileSpeed);
+const pr = new EnemyProjectile(this.x, this.y, angle, Math.floor(this.damage / 2), this.behaviorType, this.isBoss, this.projectileSpeed, this.level);
 pr.createdMs = game.nowMs; // 生成時刻は発射時点で確定させる（描画側で付けると初回判定で即期限切れになる）
 this.projectiles.push(pr);
 this.lastAttackMs = game.nowMs;
@@ -268,15 +276,20 @@ const p = game.player;
 const kept = [];
 for (const pr of this.projectiles) {
 if (pr.createdMs < 0) pr.createdMs = game.nowMs; // 未設定なら寿命をここから数える
-if (pr.isExpired(game)) continue;
-if (!pr.isOnScreen()) continue;
+let drop = false;
+if (pr.isExpired(game)) drop = true;
+else if (!pr.isOnScreen()) drop = true;
 // 通常弾はプレイヤーから600px超で消去（ボス弾は無制限）
-if (!pr.isBossBullet) {
+else if (!pr.isBossBullet) {
 const dx = pr.x - p.x, dy = pr.y - p.y;
-if (dx * dx + dy * dy > 360000) continue;
+if (dx * dx + dy * dy > 360000) drop = true;
 }
+if (!drop) {
 pr.update(game, dtF);
-if (!pr.expiredByObstacle) kept.push(pr);
+if (pr.expiredByObstacle) drop = true;
+}
+if (drop) this.deadProjectiles.push(pr); // 描画側でスプライトを解放させる（残すと弾が画面に残り続ける）
+else kept.push(pr);
 }
 this.projectiles = kept;
 }
@@ -307,19 +320,20 @@ this.initialDirection = null;
 
 /* ---------------- 敵の弾 (core/enemy.py EnemyProjectile) ---------------- */
 class EnemyProjectile {
-constructor(x, y, angle, damage, behaviorType, isBossBullet, projectileSpeed) {
+constructor(x, y, angle, damage, behaviorType, isBossBullet, projectileSpeed, enemyLevel = 1) {
 this.x = x; this.y = y;
 this.angle = angle;
 this.damage = damage;
 this.behaviorType = behaviorType;
 this.isBossBullet =!!isBossBullet;
 this.speed = projectileSpeed;
-this.size = this.isBossBullet? 24: 22;
+this.size = this.isBossBullet? 24: 22; // 当たり判定サイズ（原作準拠）
+this.drawSize = this.isBossBullet? 48: 22; // 描画キャンバス寸法（原作はボス弾を半径=sizeで描くため48）
 this.lifetime = 3000; // ms
 this.createdMs = -1; // game 側でセット
 this.vx = Math.cos(angle) * this.speed;
 this.vy = Math.sin(angle) * this.speed;
-this.color = this.isBossBullet? 0xffd700: enemyColor(behaviorType);
+this.color = this.isBossBullet? 0xffd700: bulletColor(behaviorType, enemyLevel);
 this.expiredByObstacle = false;
 this.sprite = null;
 }
@@ -398,8 +412,11 @@ spawnWave(game) {
 if (game.enemies.length >= C.MAX_ENEMIES_ON_SCREEN) {
 while (game.enemies.length > C.MAX_ENEMIES_ON_SCREEN * 0.8) game.removeEnemy(game.enemies[0]);
 }
-// 1回あたりの出現数: 30秒ごとに +1（増量仕様。原作は最大3体）
-const num = 1 + Math.floor(game.gameTime / C.SPAWN_BATCH_STEP_SEC);
+// 1回あたりの出現数: 30秒ごとに +1（増量仕様。原作は最大3体）。
+// ただし画面付近の敵数がレベル別上限に達している間は追加しない。
+const room = game.onscreenCap() - game.screenPopulation();
+if (room <= 0) return;
+const num = Math.min(1 + Math.floor(game.gameTime / C.SPAWN_BATCH_STEP_SEC), room);
 const cam = game.camera, margin = 100;
 for (let i = 0; i < num; i++) {
 const side = ['top', 'bottom', 'left', 'right'][randInt(0, 3)];
@@ -422,6 +439,25 @@ strengthMultiplier: rule.strength_multiplier, sizeMultiplier: rule.size_multipli
 game.addEnemy(e);
 game.particles.spawnBurst(x, y, 0xffffff, 1);
 }
+}
+
+/* 画面外回収した敵の再出現: 同じ enemyNo を画面端の内側へ新品で出現させる */
+respawnAtEdge(game, enemyNo) {
+const stat = GameData.enemyStats.get(enemyNo);
+if (!stat) return;
+const cam = game.camera, inset = 40;
+const side = ['top', 'bottom', 'left', 'right'][randInt(0, 3)];
+let x, y;
+if (side === 'top') { x = randInt(Math.floor(cam.x) + inset, Math.floor(cam.x) + C.SCREEN_WIDTH - inset); y = Math.floor(cam.y) + inset; }
+else if (side === 'bottom') { x = randInt(Math.floor(cam.x) + inset, Math.floor(cam.x) + C.SCREEN_WIDTH - inset); y = Math.floor(cam.y) + C.SCREEN_HEIGHT - inset; }
+else if (side === 'left') { x = Math.floor(cam.x) + inset; y = randInt(Math.floor(cam.y) + inset, Math.floor(cam.y) + C.SCREEN_HEIGHT - inset); }
+else { x = Math.floor(cam.x) + C.SCREEN_WIDTH - inset; y = randInt(Math.floor(cam.y) + inset, Math.floor(cam.y) + C.SCREEN_HEIGHT - inset); }
+x = Math.max(50, Math.min(C.WORLD_WIDTH - 50, x));
+y = Math.max(50, Math.min(C.WORLD_HEIGHT - 50, y));
+[x, y] = game.stage.findSafeSpawnPosition(x, y, 32);
+[x, y] = scatterIfStacked(game, x, y);
+game.addEnemy(new Enemy(stat, { spawnX: x, spawnY: y }));
+game.particles.spawnBurst(x, y, 0xffffff, 1);
 }
 
 spawnBoss(game, stat) {

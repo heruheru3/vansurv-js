@@ -39,6 +39,10 @@ const C = {
   SPAWN_INTERVAL_MIN_FRAMES: 5,     // 出現間隔の下限（フレーム）
   SPAWN_INTERVAL_STEP_SEC: 10,      // この秒数ごとに間隔を1フレーム短縮
   SPAWN_BATCH_STEP_SEC: 30,         // この秒数ごとに1回あたりの出現数を+1（上限なし）
+  // 画面付近の敵数上限（難易度レベル＝経過時間帯ごとに増加）: [開始秒, 上限]
+  ONSCREEN_CAP_STAGES: [[0, 100], [60, 200], [120, 350], [240, 550], [360, 750], [480, 1000]],
+  OFFSCREEN_REPOP_MARGIN: 160,      // 画面端からこの距離(px)を超えて外れた敵は回収対象
+  OFFSCREEN_REPOP_INTERVAL_SEC: 1,  // 画面外敵の回収チェック間隔（秒）
 
   NATURAL_HEAL_INTERVAL_MS: 2000,
   NATURAL_HEAL_AMOUNT: 0,           // + HP-subitem level per tick (player.py)
