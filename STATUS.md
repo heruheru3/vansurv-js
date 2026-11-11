@@ -325,3 +325,16 @@ python3 -m http.server 8000
   3. iOS定石の無音バッファ再生によるアンロックを unlock() に追加（1回のみ）。
 - 実測: バッファ7/7（コールバック形式でデコード）、running時は BufferSource
   再生・clone 0件、suspended を装った場合は clone へフォールバック、エラー0件。
+
+## 2026-11-12 SEを要素プール方式へ（WebAudio方式を撤回）
+
+- 実機報告: スペースで BGM は鳴るが SE は出ない。BGM（要素再生）が鳴る以上、
+  音声URL配信と要素再生は正常で、鳴らないのは WebAudio 出力経路だけと確定。
+  状態が running でバッファ再生しても iPhone では無音になるケースであり、
+  コード側の状態判定では検出できない。
+- audio.js を作り替え: 音ごとに Audio 要素を4つ preload したプールを持ち、
+  playSound はプールを順番に currentTime=0 + play() するだけにした。
+  再生ごとの要素生成・clone・読み込みなし。WebAudio 依存を SE から除去。
+  SE ON/OFF・連打制限・BGM は従来どおり。
+- 実測: 7種×4要素、再生3回で異なる要素3つを使用（ローテーション）、
+  clone 0件、SE OFFで再生0件、エラー0件。
