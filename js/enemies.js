@@ -334,6 +334,7 @@ this.x = Math.max(50, Math.min(C.WORLD_WIDTH - 50, this.x));
 this.y = Math.max(50, Math.min(C.WORLD_HEIGHT - 50, this.y));
 this.initialDirection = null;
 this.facingRight = p.x >= this.x; // 再出現時もプレイヤーの方を向く
+this.prevX = this.x; this.prevY = this.y; // 描画補間: テレポートで滑らないよう同期
 }
 }
 
