@@ -2,6 +2,8 @@
 /* VanSurv JS port — constants ported 1:1 from constants.py (pygame original).
    Where the original code and README disagree, the code wins. */
 const C = {
+  // 画面サイズは初期値。起動後 Game.applyViewSize が実ウインドウサイズへ
+  // 書き換える（解像度＝ウインドウサイズ。縦画面・正方形でもそのまま遊べる）
   SCREEN_WIDTH: 1280,
   SCREEN_HEIGHT: 720,
   FPS: 60,

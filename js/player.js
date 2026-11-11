@@ -238,6 +238,9 @@ if (k.has('ArrowUp') || k.has('KeyW')) dy -= 1;
 if (k.has('ArrowDown') || k.has('KeyS')) dy += 1;
 const hasKeyboard = dx!== 0 || dy!== 0;
 
+// バーチャルパッド（タッチ）: ドラッグ方向の単位ベクトルがそのまま移動入力になる
+if (input.padVec) { dx += input.padVec.x; dy += input.padVec.y;}
+
 if (input.mouseWorld) {
 const mdx = input.mouseWorld.x - this.x;
 const mdy = input.mouseWorld.y - this.y;

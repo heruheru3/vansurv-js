@@ -180,7 +180,19 @@ const UI = {
        - 画面下部の Restart / Continue ボタン
      stats: { clear, gameTime, timeSec, damageStats:{type:dmg}, enemyKills:{no:count}, bossKills:{no:count} }
      opts.paused: ESC ポーズ（原作 force_ended の GAME PAUSED 表示） */
+  /* リザルト画面（1280x720基準の絶対配置）をウインドウに収まるよう
+     内側ステージごと拡縮・センタリングする。リサイズ時にも呼ばれる */
+  layoutResultStage() {
+    const st = document.getElementById('result-stage');
+    if (!st) return;
+    const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+    st.style.left = ((window.innerWidth - 1280 * s) / 2) + 'px';
+    st.style.top = ((window.innerHeight - 720 * s) / 2) + 'px';
+    st.style.transform = 'scale(' + s + ')';
+  },
+
   openEndScreen(stats, onAction, opts) {
+    this.layoutResultStage();
     const clear = !!stats.clear;
     const paused = !!(opts && opts.paused);
     // ポーズ中は Restart より Continue（再開）を初期選択にして誤終了を防ぐ

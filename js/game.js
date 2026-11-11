@@ -167,10 +167,11 @@ const Game = {
 
     // ドット絵の輪郭を保持する: テクスチャ拡大縮小は全て NEAREST（補間なし）にする
     PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
-    this.app = new PIXI.Application({ width: C.SCREEN_WIDTH, height: C.SCREEN_HEIGHT, backgroundColor: 0x000000, antialias: false });
+    this.app = new PIXI.Application({ width: window.innerWidth, height: window.innerHeight, backgroundColor: 0x000000, antialias: false });
     document.getElementById('stage').prepend(this.app.view);
-    this.fitToWindow();
-    window.addEventListener('resize', () => this.fitToWindow());
+    this.applyViewSize();
+    window.addEventListener('resize', () => this.applyViewSize());
+    window.addEventListener('orientationchange', () => this.applyViewSize());
     this.initInput();
 
     try {
@@ -222,9 +223,15 @@ const Game = {
     window.__vansurv = this;
   },
 
-  fitToWindow() {
-    const s = Math.min(window.innerWidth / C.SCREEN_WIDTH, window.innerHeight / C.SCREEN_HEIGHT);
-    document.getElementById('stage').style.transform = 'scale(' + s + ')';
+  /* 画面解像度＝ウインドウサイズ（2026-11-11 浩之様の指定）:
+     縦画面なら縦画面、正方形なら正方形、そのままの形で遊べる。
+     C.SCREEN_WIDTH/HEIGHT を実サイズへ更新すると、カメラ・スポーン範囲・
+     ミニマップ枠など C.SCREEN_* を参照する全ロジックが追従する。 */
+  applyViewSize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    C.SCREEN_WIDTH = w; C.SCREEN_HEIGHT = h;
+    if (this.app) this.app.renderer.resize(w, h);
+    if (typeof UI !== 'undefined' && UI.layoutResultStage) UI.layoutResultStage();
   },
 
   /* ---------- 入力 ---------- */
@@ -242,6 +249,51 @@ const Game = {
       this.mouseScreen.x = (e.clientX - rect.left) / rect.width * C.SCREEN_WIDTH;
       this.mouseScreen.y = (e.clientY - rect.top) / rect.height * C.SCREEN_HEIGHT;
     });
+    this.initVirtualPad();
+  },
+
+  /* バーチャルパッド（タッチ操作）: キャンバスに触れた位置を中心にパッドが
+     出て、ドラッグした方向へ移動できる（フローティング式）。
+     メニュー等のオーバーレイ表示中はそちらがタッチを受けるので干渉しない。 */
+  initVirtualPad() {
+    this.padId = null; this.padOx = 0; this.padOy = 0; this.padVec = null;
+    this.vpadEl = document.getElementById('vpad');
+    this.vpadKnob = document.getElementById('vpad-knob');
+    const view = this.app.view;
+    view.addEventListener('touchstart', (e) => {
+      if (this.state !== 'playing' || this.padId !== null) return;
+      this.touchUsed = true; // 以後はマウス追随を無効化（タッチ端末では意味がないため）
+      const t = e.changedTouches[0];
+      this.padId = t.identifier; this.padOx = t.clientX; this.padOy = t.clientY;
+      this.padVec = null;
+      this.vpadEl.style.left = t.clientX + 'px';
+      this.vpadEl.style.top = t.clientY + 'px';
+      this.vpadKnob.style.transform = 'translate(0px, 0px)';
+      this.vpadEl.style.display = 'block';
+      e.preventDefault();
+    }, { passive: false });
+    view.addEventListener('touchmove', (e) => {
+      if (this.padId === null) return;
+      for (const t of e.changedTouches) {
+        if (t.identifier !== this.padId) continue;
+        const vx = t.clientX - this.padOx, vy = t.clientY - this.padOy;
+        const len = Math.hypot(vx, vy);
+        const cl = Math.min(len, 40);
+        this.vpadKnob.style.transform = 'translate(' + (len ? vx / len * cl : 0) + 'px, ' + (len ? vy / len * cl : 0) + 'px)';
+        this.padVec = len > 10 ? { x: vx / len, y: vy / len } : null;
+        e.preventDefault();
+      }
+    }, { passive: false });
+    const endPad = (e) => {
+      for (const t of e.changedTouches) {
+        if (t.identifier !== this.padId) continue;
+        this.padId = null; this.padVec = null;
+        this.vpadEl.style.display = 'none';
+        e.preventDefault();
+      }
+    };
+    view.addEventListener('touchend', endPad, { passive: false });
+    view.addEventListener('touchcancel', endPad, { passive: false });
   },
   mouseWorld() {
     return { x: this.mouseScreen.x + this.camera.x, y: this.mouseScreen.y + this.camera.y };
@@ -452,7 +504,7 @@ const Game = {
     // 1) 敵の出現
     this.director.update(this, dtF);
     // 2) プレイヤー移動・自然回復
-    p.move(this, { keys: this.keys, mouseWorld: this.mouseWorld() }, dtF);
+    p.move(this, { keys: this.keys, mouseWorld: this.touchUsed ? null : this.mouseWorld(), padVec: this.padVec }, dtF);
     p.updateRegen(this);
     // 3) 武器の自動攻撃
     for (const [, w] of p.weapons) {
