@@ -67,9 +67,26 @@ function generateShapeTextures(renderer) {
   const gemColors = { cyan: 0x00ffff, green: 0x00ff00, red: 0xff0000 };
   for (const [key, col] of Object.entries(gemColors)) {
     Tex.gems[key] = mk((g) => {
-      g.beginFill(col, 0.95);
-      g.drawPolygon([12, 1, 23, 12, 12, 23, 1, 12]); // ひし形
+      // 原作 ExperienceGem.draw の構成（24x24, 中心12, ひし形半径 r=4）:
+      // 同心円グロー（外側ほど薄く）＋本体＋上部ハイライト＋暗い輪郭
+      const bright = (amt) => {
+        const r = Math.min(255, ((col >> 16) & 255) + amt), gg = Math.min(255, ((col >> 8) & 255) + amt), b = Math.min(255, (col & 255) + amt);
+        return (r << 16) | (gg << 8) | b;
+      };
+      for (let i = 12; i >= 1; i--) {
+        const t = i / 12;
+        g.beginFill(col, (10 + (1 - t) * 180) / 255);
+        g.drawCircle(12, 12, t * 8.8);
+        g.endFill();
+      }
+      g.beginFill(col, 240 / 255);
+      g.drawPolygon([12, 8, 16, 12, 12, 16, 8, 12]); // 本体ひし形
       g.endFill();
+      g.beginFill(bright(80), 140 / 255);
+      g.drawPolygon([12, 8, 14, 11.2, 12, 12.8, 10, 11.2]); // ハイライト（上面）
+      g.endFill();
+      g.lineStyle(1, 0x000000, 100 / 255);
+      g.drawPolygon([12, 8, 16, 12, 12, 16, 8, 12]); // 輪郭
     }, 24, 24);
   }
   // 敵弾テクスチャ（原作 EnemyProjectile.draw の多層エフェクトを再現し、色ごとにキャッシュ）
