@@ -21,10 +21,23 @@ const UI = {
       'money-text', 'fps-text', 'items-row', 'minimap', 'menu', 'menu-title', 'menu-grid',
       'menu-hint', 'endscreen', 'end-title', 'end-time', 'result-weapon-rows',
       'result-total-damage', 'result-total-dps', 'result-enemy-grid', 'result-boss-row',
-      'end-buttons', 'banner', 'loading'];
+      'end-buttons', 'banner', 'loading', 'se-toggle'];
     for (const id of ids) this.els[id] = document.getElementById(id);
     this.minimapCtx = this.els.minimap.getContext('2d');
     this._lastMinimapMs = 0;
+    // SE ON/OFF ボタン（音声まわりの切り分け・任意設定）
+    if (this.els['se-toggle']) {
+      this.els['se-toggle'].addEventListener('click', () => {
+        AudioSys.setSfxEnabled(!AudioSys.sfxEnabled);
+        this.syncSeButton();
+      });
+      this.syncSeButton();
+    }
+  },
+
+  syncSeButton() {
+    const b = this.els['se-toggle'];
+    if (b) b.textContent = AudioSys.sfxEnabled ? 'SE ON' : 'SE OFF';
   },
 
   hideLoading() { if (this.els.loading) this.els.loading.style.display = 'none'; },

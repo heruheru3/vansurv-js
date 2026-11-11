@@ -19,13 +19,24 @@ const AudioSys = {
   // assets/sfx/ に存在する効果音（core/audio.py が使う名前と同一）
   SFX_NAMES: ['enemy_hurt', 'player_hurt', 'gem_pickup', 'heal', 'bomb', 'powerup', 'box_break'], // item_drop は鳴らさない（2026-11-11 浩之様の指定）
 
+  // SE の ON/OFF（診断・任意設定）。OFF の間 playSound は即座に戻る
+  // （再生のたびのメディア読み込み待ちが発生しない状態を作れる）
+  sfxEnabled: true,
+
   init() {
+    try { this.sfxEnabled = localStorage.getItem('vansurv_se') !== '0'; } catch (e) { /* 既定 ON */ }
     for (const n of this.SFX_NAMES) {
       const a = new Audio('assets/sfx/' + n + '.wav');
       a.preload = 'auto';
       a.volume = this.sfxVolume;
       this.sounds[n] = a;
     }
+  },
+
+  setSfxEnabled(on) {
+    this.sfxEnabled = !!on;
+    try { localStorage.setItem('vansurv_se', on ? '1' : '0'); } catch (e) { /* 保存失敗は無視 */ }
+    return this.sfxEnabled;
   },
 
   /* 最初のユーザー操作から呼ばれる。以後、予約されていたBGMも再生開始する */
@@ -36,7 +47,7 @@ const AudioSys = {
   },
 
   playSound(name, minInterval = 0.1) {
-    if (!this.unlocked) return;
+    if (!this.unlocked || !this.sfxEnabled) return;
     const now = performance.now();
     if (now - (this.lastPlayed[name] || -1e9) < minInterval * 1000) return;
     this.lastPlayed[name] = now;

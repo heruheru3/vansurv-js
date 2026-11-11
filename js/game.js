@@ -161,6 +161,7 @@ const Game = {
     UI.init();
     SaveSystem.load();
     AudioSys.init();
+    UI.syncSeButton(); // 保存済みの SE ON/OFF をボタン表示へ反映
     const unlock = () => AudioSys.unlock();
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);

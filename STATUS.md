@@ -276,3 +276,12 @@ python3 -m http.server 8000
   frame/HUD/syncSprites は対策前の方式（可変dt・maxFPS=60・毎フレーム書き込み）に復帰。
   切り分け用のフレーム時間測定コード（未コミット分）も破棄済み。
 - 保持した変更: カード幅均一化、既定ズーム0.8、ホイール／ピンチズーム。
+
+## 2026-11-11 SE ON/OFFトグル（音声の待ち切り分け用）
+
+- iPhoneで「FPSは出るのにフレームが不定期に止まる」症状について、効果音の再生方式が
+  容疑（再生ごとに Audio 要素を cloneNode し、毎回メディアの読み込みから始まるため、
+  CPU負荷ではなく読み込み待ちが直列化して引っかかる）。切り分けのため HUD 右下に
+  SE ON/OFF ボタンを追加（AudioSys.sfxEnabled、localStorage 'vansurv_se' に保存）。
+  OFF の間 playSound は即座に戻り、メディア読み込みが一切発生しない。
+- 実測: ON時は再生で clone 発生、OFF切替後は clone 0件・設定保存を確認、エラー0件。
