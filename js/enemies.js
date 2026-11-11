@@ -156,8 +156,9 @@ this.lastAttackMs = 0;
 // ノックバック（enemy.py apply_knockback / update_knockback）
 this.knockbackVx = 0; this.knockbackVy = 0;
 this.knockbackTimer = 0; this.knockbackCooldown = 0;
-// 地形ハマり検出→noclip（enemy.py: 3秒動けなければ1秒間地形無視）
+// ハマり検出→noclip（原作: 3秒動けなければ1秒間地形無視。本移植では正味移動量でも検出する）
 this.stuckTimer = 0; this.noclipMode = false; this.noclipTimer = 0;
+this.stuckAnchorX = this.x; this.stuckAnchorY = this.y; this.stuckAnchorTimer = 0;
 // アニメーション・表示
 this.animationTime = 0; this.isMoving = false; this.facingRight = true;
 this.hitFlashTimer = 0; this.hitFlashDuration = 0.25;
@@ -215,6 +216,7 @@ update(game, dtF) {
 const p = game.player;
 const startX = this.x, startY = this.y;
 
+let wantMove = false; // 行動が「移動したい」か（ハマり検出の前提）
 // ノックバック中は通常移動しない
 if (this.knockbackTimer > 0) {
 const nx = this.x + this.knockbackVx * (dtF / 60);
@@ -228,7 +230,8 @@ this.knockbackCooldown = C.KNOCKBACK_COOLDOWN_DURATION;
 } else {
 const b = BEHAVIORS[this.behaviorType] || BEHAVIORS[1];
 const [nx, ny] = b.move(this, p, dtF);
-if (nx!== this.x || ny!== this.y) this._tryMove(game, nx, ny);
+wantMove = (nx!== this.x || ny!== this.y);
+if (wantMove) this._tryMove(game, nx, ny);
 }
 if (this.knockbackCooldown > 0) this.knockbackCooldown = Math.max(0, this.knockbackCooldown - dtF / 60);
 
@@ -239,11 +242,26 @@ const moved = Math.hypot(this.x - startX, this.y - startY);
 this.isMoving = moved > 0.1;
 if (this.isMoving) this.animationTime += dtF / 60;
 
-// ハマり検出（移動量が1px未満なら加算。3秒で noclip、1秒経過＆地形外で解除）
+// ハマり検出（2系統）
+// (a) 原作方式: 毎フレームの移動量が1px未満なら加算し、3秒で noclip。
+// (b) 正味移動量方式: 行動が移動を求めているのに 1.5秒間で正味12px未満しか
+//     進めていない場合も詰まりとみなす。群衆や壁際で小刻みに揺れて
+//     「毎フレーム1px以上は動く」ため (a) をすり抜ける個体を救済する
+//     （重なり回避でロックされる問題への対処）。
 if (moved < 1.0) {
 this.stuckTimer += dtF / 60;
 if (this.stuckTimer >= 3.0 &&!this.noclipMode) { this.noclipMode = true; this.noclipTimer = 0;}
 } else this.stuckTimer = 0;
+if (!wantMove || this.noclipMode) {
+this.stuckAnchorX = this.x; this.stuckAnchorY = this.y; this.stuckAnchorTimer = 0;
+} else {
+this.stuckAnchorTimer += dtF / 60;
+if (this.stuckAnchorTimer >= 1.5) {
+const net = Math.hypot(this.x - this.stuckAnchorX, this.y - this.stuckAnchorY);
+if (net < 12) { this.noclipMode = true; this.noclipTimer = 0;}
+this.stuckAnchorX = this.x; this.stuckAnchorY = this.y; this.stuckAnchorTimer = 0;
+}
+}
 if (this.noclipMode) {
 this.noclipTimer += dtF / 60;
 if (this.noclipTimer >= 1.0 &&!game.stage.cornersBlocked(this.x, this.y, Math.floor(this.size / 2))) {
