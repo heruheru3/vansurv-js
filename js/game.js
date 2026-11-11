@@ -408,6 +408,7 @@ const Game = {
     // 6) 攻撃の命中判定（ボックス→敵の順。原作 main.py と同じ）
     this.collideAttacksWithBoxes();
     this.collideAttacksWithEnemies();
+    this.collideAttacksWithProjectiles();
     // 7) 敵の更新（移動・射撃・弾）
     for (const e of [...this.enemies]) {
       e.update(this, dtF);
@@ -517,6 +518,29 @@ const Game = {
         if (atk.type === 'magic_wand') { this.releaseAttackSprite(atk); this.attacks.splice(this.attacks.indexOf(atk), 1); }
         if (atk.type !== 'stone' && atk.type !== 'magic_wand') break;
         if (atk.type === 'magic_wand') break;
+      }
+    }
+  },
+
+  /* 攻撃 vs 敵弾（main.py の迎撃判定）: 通常敵の弾はプレイヤーの攻撃に当たると
+     黄色いエフェクトと共に消える（攻撃自体は消えない）。ボスの弾は相殺不可。 */
+  collideAttacksWithProjectiles() {
+    if (!this.attacks.length) return;
+    for (const e of this.enemies) {
+      if (!e.projectiles.length) continue;
+      for (const pr of [...e.projectiles]) {
+        if (pr.isBossBullet) continue; // ボス弾は消せない
+        const prHalf = Math.floor(pr.size / 2);
+        for (const atk of this.attacks) {
+          if (atk.pending) continue;
+          const atkHalf = Math.floor(atk.size / 2);
+          if (Math.abs(atk.x - pr.x) < atkHalf + prHalf && Math.abs(atk.y - pr.y) < atkHalf + prHalf) {
+            e.projectiles.splice(e.projectiles.indexOf(pr), 1);
+            this.releaseProjectileSprite(pr);
+            this.particles.burst(pr.x, pr.y, 0xffff64, 4); // 迎撃エフェクト（原作 DeathParticle 黄）
+            break;
+          }
+        }
       }
     }
   },
