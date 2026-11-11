@@ -116,6 +116,10 @@ python3 -m http.server 8000
   `syncSprites` の敵 scale.x 符号を原作準拠に修正。プレイヤーは原作と同じ「右移動時に反転」。
 - **拡大縮小の輪郭保持**: `PIXI.settings.SCALE_MODE = NEAREST` を全体に適用し、
   canvas の CSS にも `image-rendering: pixelated` を追加（ドット絵が滲まない）。
+- **負荷確認用設定（2026-11-11）**: 浩之様の指定で `SURVIVAL_TIME` 180→600秒、
+  `MAX_ENEMIES_ON_SCREEN` 300→1000 に変更中（いずれも constants.js の1行で戻せる）。
+  実ブラウザで敵600体・エラー0件・継続動作を確認済み。ボスの出現時刻はCSV通り
+  最初の180秒内に全て出るため、後半は通常敵の群れのみになる。
 - **プレイヤー表示サイズ**: 一時 96px にしたが大きくなりすぎたため 48px に戻した
   （`PLAYER_SPRITE_SIZE`、当たり判定とは独立）。
   あわせて、向き反転の scale 上書きで倍率が消え実際は 16px で描かれていた問題も解消した

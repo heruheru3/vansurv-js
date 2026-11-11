@@ -5,7 +5,7 @@ const C = {
   SCREEN_WIDTH: 1280,
   SCREEN_HEIGHT: 720,
   FPS: 60,
-  SURVIVAL_TIME: 180,               // seconds to survive = game clear
+  SURVIVAL_TIME: 600,               // seconds to survive = game clear（負荷確認のため 180→600 に延長中。2026-11-11 浩之様の指定）
 
   WORLD_WIDTH: 1280 * 4,            // 5120
   WORLD_HEIGHT: 720 * 4,            // 2880
@@ -33,7 +33,7 @@ const C = {
   PARTICLE_LIMIT: 200,
   PARTICLE_TRIM_TO: 300,
   MAX_GEMS_ON_SCREEN: 100,
-  MAX_ENEMIES_ON_SCREEN: 300,
+  MAX_ENEMIES_ON_SCREEN: 1000,      // 負荷確認のため 300→1000 に増量中（2026-11-11 浩之様の指定）
 
   NATURAL_HEAL_INTERVAL_MS: 2000,
   NATURAL_HEAL_AMOUNT: 0,           // + HP-subitem level per tick (player.py)
