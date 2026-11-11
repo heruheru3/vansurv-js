@@ -223,6 +223,11 @@ const Game = {
     return { x: this.mouseScreen.x + this.camera.x, y: this.mouseScreen.y + this.camera.y };
   },
   handleKeyDown(e) {
+    // ESC: プレイ中はポーズ、ポーズ中は再開（原作 main.py の ESC 強制終了相当）
+    if (e.code === 'Escape' || e.key === 'Escape') {
+      if (this.state === 'playing' && !UI.menu && !UI.endState) { this.pauseGame(); return; }
+      if (this.state === 'paused') { this.resumeGame(); return; }
+    }
     // メニュー操作（ui/ui.py のキー処理相当）
     if (UI.menu) {
       const mode = UI.menu.mode;
@@ -942,23 +947,46 @@ const Game = {
     SaveSystem.save();
   },
   endStats(clear, clearBonus) {
-    const nameOf = (t) => descName('weapons', t === 'book' ? 'rotating_book' : t);
-    const rows = Object.entries(this.damageStats).sort((a, b) => b[1] - a[1]).map(([t, d]) => [nameOf(t), d]);
-    // 敵別撃破数（原作 draw_enemy_kill_stats）。名前は enemy_stats.csv の description
-    const killRows = Object.entries(this.enemyKillStats).sort((a, b) => b[1] - a[1]).map(([k, n]) => {
-      if (k.startsWith('boss')) {
-        const bs = GameData.bossStats.get(parseInt(k.slice(4), 10));
-        return ['ボス' + k.slice(4) + (bs ? '（Lv' + bs.level + '）' : ''), n];
-      }
-      const st = GameData.enemyStats.get(parseInt(k, 10));
-      return [st && st.description ? st.description : ('敵' + k), n];
-    });
+    // リザルト画面（原作 ui/ui.py）が必要とする生データを渡す。
+    // damageStats: { 攻撃タイプ: ダメージ } / enemyKills: { enemy_no: 撃破数 }
+    // bossKills: { ボスNo: 撃破数 }（enemyKillStats の 'bossN' キーを分離）
+    const enemyKills = {};
+    const bossKills = {};
+    for (const [k, n] of Object.entries(this.enemyKillStats)) {
+      if (k.startsWith('boss')) bossKills[parseInt(k.slice(4), 10)] = n;
+      else enemyKills[parseInt(k, 10)] = n;
+    }
     return {
-      clear, timeSec: Math.floor(this.gameTime), level: this.player.level, kills: this.kills,
+      clear, gameTime: this.gameTime, timeSec: Math.floor(this.gameTime),
+      level: this.player.level, kills: this.kills,
       sessionMoney: this.sessionMoney, survivalBonus: Math.floor(this.gameTime) * C.MONEY_PER_SURVIVAL_SECOND,
-      clearBonus, damageRows: rows, killRows,
+      clearBonus, damageStats: { ...this.damageStats }, enemyKills, bossKills,
     };
   },
+  /* ---------- ポーズ ----------
+     原作 main.py の ESC は「GAME PAUSED」表示付きの強制終了だったが、
+     この移植版ではゲームを止める本物のポーズとして扱う。
+     Continue で無料再開、Restart でセッションを確定して終了する。 */
+  pauseGame() {
+    if (this.state !== 'playing') return;
+    this.state = 'paused';
+    UI.openEndScreen(this.endStats(false, 0), (action) => {
+      if (action === 'continue') {
+        // ポーズ再開: コンティニュー料金や回復はなし（現在の状態のまま続行）
+        this.state = 'playing';
+      } else {
+        // ポーズから終了: ここまでの報酬を保存して初期武器選択へ戻る
+        this.bankAndRecord(0);
+        this.resetGame();
+      }
+    }, { paused: true });
+  },
+  resumeGame() {
+    if (this.state !== 'paused') return;
+    UI.closeEndScreen();
+    this.state = 'playing';
+  },
+
   onGameOver() {
     this.state = 'over';
     AudioSys.playSound('player_hurt');
@@ -980,7 +1008,6 @@ const Game = {
   },
   onGameClear() {
     this.state = 'clear';
-    UI.showBanner('GAME CLEAR!');
     UI.openEndScreen(this.endStats(true, C.MONEY_GAME_CLEAR_BONUS), () => {
       this.bankAndRecord(C.MONEY_GAME_CLEAR_BONUS);
       this.resetGame();

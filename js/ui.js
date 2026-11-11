@@ -19,7 +19,9 @@ const UI = {
   init() {
     const ids = ['hud', 'hp-bar', 'hp-text', 'xp-bar', 'lv-text', 'timer-text', 'kills-text',
       'money-text', 'fps-text', 'items-row', 'minimap', 'menu', 'menu-title', 'menu-grid',
-      'menu-hint', 'endscreen', 'end-title', 'end-stats', 'end-buttons', 'banner', 'loading'];
+      'menu-hint', 'endscreen', 'end-title', 'end-time', 'result-weapon-rows',
+      'result-total-damage', 'result-total-dps', 'result-enemy-grid', 'result-boss-row',
+      'end-buttons', 'banner', 'loading'];
     for (const id of ids) this.els[id] = document.getElementById(id);
     this.minimapCtx = this.els.minimap.getContext('2d');
     this._lastMinimapMs = 0;
@@ -169,37 +171,132 @@ const UI = {
   },
 
   /* ---------------- エンド画面 ----------------
-     stats: { clear, timeSec, level, kills, sessionMoney, survivalBonus, damageRows:[[名前,ダメージ],...] } */
-  openEndScreen(stats, onAction) {
-    this.endState = { clear: stats.clear, selected: 0, onAction, canContinue: !stats.clear };
-    this.els['end-title'].textContent = stats.clear ? 'GAME CLEAR!' : 'GAME OVER';
-    this.els['end-title'].style.color = stats.clear ? '#ffd700' : '#e33';
-    const mm = Math.floor(stats.timeSec / 60), ss = Math.floor(stats.timeSec % 60);
-    let html = '<table>' +
-      '<tr><td>生存時間</td><td>' + mm + ':' + String(ss).padStart(2, '0') + '</td></tr>' +
-      '<tr><td>レベル</td><td>' + stats.level + '</td></tr>' +
-      '<tr><td>撃破数</td><td>' + stats.kills + '</td></tr>' +
-      '<tr><td>獲得ゴールド</td><td>' + (stats.sessionMoney + stats.survivalBonus) + ' G' +
-      '（撃破等 ' + stats.sessionMoney + ' + 生存 ' + stats.survivalBonus + (stats.clearBonus ? ' + クリア ' + stats.clearBonus : '') + '）</td></tr>' +
-      '<tr><td>所持金（累計）</td><td>' + SaveSystem.getMoney() + ' G</td></tr></table>';
-    if (stats.damageRows && stats.damageRows.length) {
-      html += '<div class="dmg-title">武器別ダメージ</div><table>';
-      for (const [name, dmg] of stats.damageRows) {
-        html += '<tr><td>' + name + '</td><td>' + Math.floor(dmg) + '</td></tr>';
-      }
-      html += '</table>';
-    }
-    if (stats.killRows && stats.killRows.length) {
-      html += '<div class="dmg-title">敵別撃破数</div><table>';
-      for (const [name, n] of stats.killRows) {
-        html += '<tr><td>' + name + '</td><td>' + n + ' 体</td></tr>';
-      }
-      html += '</table>';
-    }
-    this.els['end-stats'].innerHTML = html;
+     原作 ui/ui.py の draw_ui（リザルト部）と draw_end_buttons を再現する。
+     内容:
+       - タイトル + Survival Time
+       - 武器別ダメージ表（アイコン / 武器名 / Total Damage / DPS）
+       - Enemies Defeated（敵20体のアイコンを 10列×2段で表示）
+       - Boss Defeated（ボス8体のアイコン + 撃破チェック）
+       - 画面下部の Restart / Continue ボタン
+     stats: { clear, gameTime, timeSec, damageStats:{type:dmg}, enemyKills:{no:count}, bossKills:{no:count} }
+     opts.paused: ESC ポーズ（原作 force_ended の GAME PAUSED 表示） */
+  openEndScreen(stats, onAction, opts) {
+    const clear = !!stats.clear;
+    const paused = !!(opts && opts.paused);
+    // ポーズ中は Restart より Continue（再開）を初期選択にして誤終了を防ぐ
+    this.endState = { clear, paused, selected: paused ? 1 : 0, onAction, canContinue: !clear };
+    this.els.endscreen.classList.toggle('clear', clear);
+    this.els.endscreen.classList.toggle('paused', paused);
+    const hasDamage = !!stats.damageStats && Object.keys(stats.damageStats).length > 0;
+    this.els.endscreen.classList.toggle('no-damage', !hasDamage);
+    this.els['end-title'].textContent = paused ? 'GAME PAUSED' : (clear ? 'GAME CLEAR!' : 'GAME OVER');
+    const seconds = Math.floor(stats.gameTime !== undefined ? stats.gameTime : stats.timeSec);
+    this.els['end-time'].textContent = (paused ? 'Current Time: ' : 'Survival Time: ') + seconds + 's';
+    this.renderWeaponStats(stats);
+    this.renderEnemyStats(stats.enemyKills || {});
+    this.renderBossStats(stats.bossKills || {});
     this.renderEndButtons();
-    this.els.endscreen.style.display = 'flex';
+    // 原作 draw_ui はゲーム終了/ポーズ中に残り時間を描かない（タイトルとの重なり防止）
+    this.els['timer-text'].style.visibility = 'hidden';
+    this.els.endscreen.style.display = 'block';
   },
+
+  /* 攻撃タイプ -> アイコン/説明文の武器キー（本の攻撃タイプは 'book'） */
+  weaponIconKey(type) { return type === 'book' ? 'rotating_book' : type; },
+  weaponDisplayName(type) {
+    const key = this.weaponIconKey(type);
+    const d = GameData.descriptions && GameData.descriptions.weapons && GameData.descriptions.weapons[key];
+    if (d && d.name) return d.name;
+    const s = key.replace(/_/g, ' ');
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  },
+
+  /* 武器別ダメージ表（原作 draw_ui の "Weapon / Total Damage / DPS"） */
+  renderWeaponStats(stats) {
+    const raw = stats.damageStats || {};
+    // 原作は並び順（ダメージ降順）で最大5行まで表示する
+    const entries = Object.entries(raw).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const rowsEl = this.els['result-weapon-rows'];
+    rowsEl.innerHTML = '';
+    const totalTime = Math.max(1, stats.gameTime !== undefined ? stats.gameTime : (stats.timeSec || 1));
+    for (const [type, dmg] of entries) {
+      const row = document.createElement('div');
+      row.className = 'result-row';
+      const nameCell = document.createElement('span');
+      nameCell.className = 'col-weapon';
+      const img = document.createElement('img');
+      img.className = 'result-icon';
+      img.src = 'assets/icons/' + this.weaponIconKey(type) + '.png';
+      img.alt = '';
+      img.onerror = () => { img.style.visibility = 'hidden'; };
+      const name = document.createElement('span');
+      name.textContent = this.weaponDisplayName(type);
+      nameCell.append(img, name);
+      const dmgCell = document.createElement('span');
+      dmgCell.className = 'col-damage';
+      dmgCell.textContent = String(Math.floor(dmg));
+      const dpsCell = document.createElement('span');
+      dpsCell.className = 'col-dps';
+      dpsCell.textContent = (dmg / totalTime).toFixed(1);
+      row.append(nameCell, dmgCell, dpsCell);
+      rowsEl.appendChild(row);
+    }
+    const total = Object.values(raw).reduce((a, b) => a + b, 0);
+    this.els['result-total-damage'].textContent = String(Math.floor(total));
+    this.els['result-total-dps'].textContent = (total / totalTime).toFixed(1);
+  },
+
+  /* 敵別撃破数（原作 draw_enemy_kill_stats）: 全20種を常に表示し、
+     未撃破は半透明＋グレーの「0」。 */
+  renderEnemyStats(enemyKills) {
+    const grid = this.els['result-enemy-grid'];
+    grid.innerHTML = '';
+    const list = [...GameData.enemyStats.values()]
+      .sort((a, b) => a.enemy_no - b.enemy_no)
+      .slice(0, 20);
+    for (const st of list) {
+      const count = enemyKills[st.enemy_no] || 0;
+      const cell = document.createElement('div');
+      cell.className = 'enemy-cell';
+      cell.title = (st.description || ('敵' + st.enemy_no)) + ': ' + count + ' 体';
+      const img = document.createElement('img');
+      img.src = 'assets/character/enemy/' + st.image_file + '.png';
+      img.alt = '';
+      if (count === 0) img.style.opacity = '0.4';
+      const num = document.createElement('span');
+      num.className = 'enemy-count' + (count === 0 ? ' zero' : '');
+      num.textContent = String(count);
+      cell.append(img, num);
+      grid.appendChild(cell);
+    }
+  },
+
+  /* ボス撃破状況（原作 draw_boss_kill_stats）: 全ボスを横並びで表示し、
+     撃破済みはチェックマーク、未撃破は半透明。 */
+  renderBossStats(bossKills) {
+    const row = this.els['result-boss-row'];
+    row.innerHTML = '';
+    const list = [...GameData.bossStats.values()].sort((a, b) => a.no - b.no);
+    for (const st of list) {
+      const defeated = (bossKills[st.no] || 0) > 0;
+      const cell = document.createElement('div');
+      cell.className = 'boss-cell';
+      cell.title = (st.description || ('ボス' + st.no)) + (defeated ? ' 撃破' : ' 未撃破');
+      const img = document.createElement('img');
+      img.src = 'assets/character/enemy/' + st.image_file + '.png';
+      img.alt = '';
+      if (!defeated) img.style.opacity = '0.4';
+      cell.appendChild(img);
+      if (defeated) {
+        const check = document.createElement('span');
+        check.className = 'boss-check';
+        check.textContent = '✓';
+        cell.appendChild(check);
+      }
+      row.appendChild(cell);
+    }
+  },
+
   renderEndButtons() {
     if (!this.endState) return;
     const wrap = this.els['end-buttons'];
@@ -212,7 +309,11 @@ const UI = {
       wrap.appendChild(b);
     };
     mk('Restart', 0, 'restart');
-    if (this.endState.canContinue) mk('Continue (' + C.MONEY_CONTINUE_COST + 'G)', 1, 'continue');
+    if (this.endState.canContinue) {
+      // ポーズの再開は無料。ゲームオーバーのコンティニューだけ 100G を徴収する
+      const label = this.endState.paused ? 'Continue' : 'Continue (' + C.MONEY_CONTINUE_COST + 'G)';
+      mk(label, 1, 'continue');
+    }
   },
   moveEndSelection(dx) {
     if (!this.endState) return;
@@ -229,6 +330,8 @@ const UI = {
   },
   closeEndScreen() {
     this.endState = null;
+    this.els.endscreen.classList.remove('paused');
+    this.els['timer-text'].style.visibility = '';
     this.els.endscreen.style.display = 'none';
   },
 };

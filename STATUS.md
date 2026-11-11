@@ -204,3 +204,43 @@ python3 -m http.server 8000
   進めていない個体も noclip で脱出させる（noclip中は敵同士の重なりも無視する既存仕様と併せて解消）。
 - 実測（森の壁越しに追跡敵54体を密集配置）: 10秒間で10px未満しか動けない個体 8→0、
   プレイヤー到達数 8→34。
+
+## 2026-11-11 ストーンのバウンド修正とリザルト画面の原作移植
+
+- **ストーンが1回しかバウンドしないバグを修正**: `WEAPON_DEFS.stone.attack` が
+  `bounces` を渡していたが、移動処理と寿命判定は `bouncesRemaining` を参照していた。
+  初期値が0のままだったため1回で消滅し、レベルアップのバウンド+1も無効だった。
+  `bouncesRemaining: w.bounces + p.extraProjectiles()` を渡すよう修正。
+  実ブラウザで初期2回（境界接触3回目で消滅）とレベルアップ 2→3 を確認。
+- **リザルト画面を原作準拠に置き換え**（`E:\jupy_work\vansurv\ui\ui.py` の
+  `draw_ui` リザルト部 / `draw_enemy_kill_stats` / `draw_boss_kill_stats` /
+  `draw_end_buttons` を DOM オーバーレイで再現）:
+  - タイトルと Survival Time（GAME OVER は赤 20/60、GAME CLEAR は緑 40/80、
+    ダメージ統計が空のときの原作座標にも対応）
+  - 880x250 武器別ダメージ表: アイコン / 武器名 / Total Damage / DPS、
+    ダメージ降順の上位5行と Total 行
+  - 560x130 Enemies Defeated: 全20体を10列×2段で表示。撃破0は半透明＋グレーの0
+  - 700x110 Boss Defeated: 全8体を横並び。撃破済みは緑チェック、未撃破は半透明
+  - 下部 Restart / Continue ボタン（原作と同じ選択色・白枠。設定画面が無いため
+    Settings ボタンのみ未実装）
+- `Game.endStats` は画面が必要とする `gameTime` / `damageStats` / `enemyKills` /
+  `bossKills` を返すよう変更（`enemyKillStats` の `bossN` キーを分離）。
+- 検証: `node --check` 全12ファイル成功。実ブラウザで GAME OVER / GAME CLEAR の
+  両レイアウト、敵グリッド、ボスチェック、DPS、左右キー/Enter、ボタンクリックを確認。
+  コンソールエラー0件。
+
+## 2026-11-11 ESCポーズ（中断・終了）
+
+- プレイ中に ESC でポーズ。`Game.pauseGame()` が `state` を `paused` にし、原作
+  `main.py` の ESC 強制終了（`force_ended`）と同じ `GAME PAUSED` / `Current Time: Xs`
+  （黄色）をリザルト画面レイアウトで表示する。`Game.frame()` は `state === 'playing'`
+  のときだけ時間と更新を進めるため、ポーズ中はゲーム内時間・敵・弾が完全に停止する。
+- ポーズ中の Continue は無料で再開（HP回復・無敵・100G徴収なし）。Restart は
+  ここまでの報酬を `bankAndRecord(0)` で確定し、初期武器選択へ戻る。
+  ゲームオーバー時の Continue (100G) は従来通り。
+- ESC キーはポーズ中にもう一度押すと再開。ポーズ画面の初期選択は Continue。
+- リザルト/ポーズ表示中は HUD の残り時間を隠す（原作 `draw_ui` も
+  game_over / game_clear 中は残り時間を描かない）。
+- 検証: 実ブラウザで ESC ポーズ→時間停止（600ms 変化なし）→ESC再開、Continue
+  クリックで無料再開、Restart でセッション報酬＋生存秒×5 の加算と初期武器選択への
+  復帰を確認。コンソールエラー0件。

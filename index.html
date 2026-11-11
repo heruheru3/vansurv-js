@@ -48,15 +48,64 @@
   .card-title { font-size: 17px; font-weight: bold; margin: 6px 0 2px; }
   .card-badge { font-size: 12px; color: #7dd87d; }
   .card-desc { font-size: 12px; color: #c5cede; line-height: 1.5; margin-top: 6px; }
-  /* ---------- エンド画面 ---------- */
-  #end-stats table { border-collapse: collapse; margin: 6px auto; font-size: 16px; }
-  #end-stats td { padding: 3px 14px; }
-  #end-stats td:first-child { color: #aab; text-align: right; }
-  .dmg-title { margin-top: 10px; font-size: 14px; color: #aab; text-align: center; }
-  #end-buttons { display: flex; gap: 24px; margin-top: 22px; }
-  .end-btn { width: 220px; height: 48px; font-size: 18px; font-family: inherit; color: #fff; background: #444; border: 2px solid #777; border-radius: 8px; cursor: pointer; }
-  .end-btn.continue { background: #2c7a2c; }
-  .end-btn.selected { border-color: #fff; box-shadow: 0 0 12px rgba(255,255,255,0.5); }
+  /* ---------- エンド画面（原作 ui/ui.py のリザルト画面を再現） ----------
+     原作はゲーム画面の上に半透明の白パネルを重ねる。暗幕は敷かない。
+     座標は仮想解像度 1280x720 基準（原作 draw_ui / get_end_button_rects と同じ）。 */
+  #endscreen.result-overlay { display: none; background: transparent; }
+  #end-title { position: absolute; left: 0; right: 0; top: 0; height: 40px; line-height: 40px;
+    text-align: center; font-size: 34px; font-weight: bold; color: #ff0000; text-shadow: 0 2px 6px #000; }
+  #endscreen.clear #end-title { top: 20px; color: #00ff00; }
+  #end-time { position: absolute; left: 0; right: 0; top: 50px; height: 20px; line-height: 20px;
+    text-align: center; font-size: 20px; color: #ff0000; text-shadow: 0 2px 4px #000; }
+  #endscreen.clear #end-time { top: 70px; color: #00ff00; }
+  /* ダメージ統計が空のときは原作と同じくタイトル/タイムを少し下げる */
+  #endscreen.no-damage #end-title { top: 20px; }
+  #endscreen.no-damage #end-time { top: 70px; }
+  #endscreen.clear.no-damage #end-time { top: 50px; }
+  /* ESC ポーズ（原作 force_ended の GAME PAUSED 表示）。タイトルと時間は黄色 */
+  #endscreen.paused #end-title { color: #ffff00; }
+  #endscreen.paused #end-time { color: #ffff00; }
+  .result-panel { position: absolute; display: flex; flex-direction: column;
+    background: rgba(255,255,255,0.5); border: 3px solid #000; color: #000; }
+  #result-weapon-panel { left: 200px; top: 110px; width: 880px; height: 250px; padding: 5px 21px; }
+  #result-enemy-panel { left: 360px; top: 370px; width: 560px; height: 130px; padding: 5px 20px; }
+  #result-boss-panel { left: 290px; top: 510px; width: 700px; height: 110px; padding: 5px 20px; }
+  .result-head { display: flex; height: 24px; align-items: center; font-size: 20px; flex: none; }
+  /* 原作はヘッダーだけ本文の数値列より左に描かれる（table_x+280 / +560） */
+  .result-head .col-weapon { width: 256px; }
+  .result-head .col-damage { width: 280px; }
+  .col-weapon { width: 296px; }
+  .col-damage { width: 260px; }
+  .col-dps { flex: 1; }
+  #result-weapon-rows { display: flex; flex-direction: column; margin-top: 18px; flex: 1; overflow: hidden; }
+  .result-row { display: flex; height: 30px; align-items: center; font-size: 16px; flex: none; }
+  .result-row .col-weapon { display: flex; align-items: center; }
+  .result-icon { width: 24px; height: 24px; margin-right: 8px; object-fit: contain;
+    image-rendering: pixelated; background: rgba(120,120,120,0.35); }
+  #result-total-row { margin-top: auto; }
+  .result-panel-title { font-size: 16px; line-height: 20px; flex: none; }
+  #result-enemy-grid { display: grid; grid-template-columns: repeat(10, 1fr);
+    grid-template-rows: 45px 45px; gap: 0; margin-top: 10px; flex: 1; align-items: start; }
+  .enemy-cell { display: flex; flex-direction: column; align-items: center; }
+  .enemy-cell img { width: 24px; height: 24px; object-fit: contain; image-rendering: pixelated; }
+  .enemy-cell .enemy-count { font-size: 12px; line-height: 14px; color: #000; }
+  .enemy-cell .enemy-count.zero { color: #666; }
+  #result-boss-row { display: flex; justify-content: center; gap: 10px; margin-top: 10px; flex: 1; }
+  .boss-cell { position: relative; width: 60px; height: 60px; flex: none; }
+  .boss-cell img { width: 60px; height: 60px; object-fit: contain; image-rendering: pixelated; }
+  .boss-check { position: absolute; right: 5px; top: 5px; width: 20px; height: 20px;
+    border-radius: 50%; border: 2px solid #000; background: #00ff00; color: #fff;
+    font-size: 14px; line-height: 20px; text-align: center; font-weight: bold;
+    text-shadow: 0 1px 2px #000; box-sizing: content-box; }
+  #end-buttons { position: absolute; left: 0; right: 0; top: 632px; display: flex;
+    justify-content: center; gap: 24px; }
+  .end-btn { width: 220px; height: 48px; font-size: 18px; font-family: inherit; color: #fff;
+    background: #282828; border: 3px solid transparent; border-radius: 8px; cursor: pointer; }
+  .end-btn.restart.selected { background: #505050; border-color: #fff; font-size: 20px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.6); }
+  .end-btn.continue { background: #28a028; }
+  .end-btn.continue.selected { background: #3cc83c; border-color: #fff; font-size: 20px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.6); }
   /* ---------- その他 ---------- */
   #banner { position: absolute; top: 90px; left: 0; right: 0; text-align: center; font-size: 30px; font-weight: bold; color: #ffdf5e; text-shadow: 0 2px 8px #000; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 6; }
   #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; background: #111; z-index: 20; }
@@ -89,11 +138,31 @@
       <div id="menu-grid"></div>
       <div class="hint" id="menu-hint"></div>
     </div>
-    <div id="endscreen" class="overlay">
-      <h1 id="end-title">GAME OVER</h1>
-      <div id="end-stats"></div>
+    <div id="endscreen" class="overlay result-overlay">
+      <div id="end-title">GAME OVER</div>
+      <div id="end-time">Survival Time: 0s</div>
+      <div id="result-weapon-panel" class="result-panel">
+        <div class="result-head">
+          <span class="col-weapon">Weapon</span>
+          <span class="col-damage">Total Damage</span>
+          <span class="col-dps">DPS</span>
+        </div>
+        <div id="result-weapon-rows"></div>
+        <div id="result-total-row" class="result-row">
+          <span class="col-weapon">Total</span>
+          <span class="col-damage" id="result-total-damage">0</span>
+          <span class="col-dps" id="result-total-dps">0.0</span>
+        </div>
+      </div>
+      <div id="result-enemy-panel" class="result-panel">
+        <div class="result-panel-title">Enemies Defeated</div>
+        <div id="result-enemy-grid"></div>
+      </div>
+      <div id="result-boss-panel" class="result-panel">
+        <div class="result-panel-title">Boss Defeated</div>
+        <div id="result-boss-row"></div>
+      </div>
       <div id="end-buttons"></div>
-      <div class="hint">←→ で選択、Enter で決定 / クリックでも選べます</div>
     </div>
     <div id="loading">読み込み中…</div>
   </div>

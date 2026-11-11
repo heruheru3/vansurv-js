@@ -336,7 +336,7 @@ const ang = randFloat(0, Math.PI * 2);
 const size = w.size * p.effectRangeMult();
 return [makeAttack({
 x: p.x, y: p.y, sizeX: size, sizeY: size, type: 'stone', speed: spd,
-duration: w.duration * p.effectTimeMult(), bounces: w.bounces + p.extraProjectiles(),
+duration: w.duration * p.effectTimeMult(), bouncesRemaining: w.bounces + p.extraProjectiles(),
 velocityX: Math.cos(ang) * spd, velocityY: Math.sin(ang) * spd,
 damage: w.damage * p.baseDamageMult(),
 })];
