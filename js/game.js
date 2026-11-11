@@ -13,6 +13,7 @@
 const Tex = {
   enemies: new Map(),   // image_file -> Texture
   playerFrames: [],     // 16x16 x4フレーム
+  playerSilhouettes: [],// プレイヤー各フレームの白シルエット（被弾/回避フラッシュ用）
   icons: new Map(),     // key -> Texture（武器/サブアイテム/アイテム/ボックス）
   weaponSprites: new Map(), // 'axe' | 'rotating_book'
   gems: {},             // colorKey -> Texture（生成）
@@ -40,6 +41,21 @@ async function loadTextures() {
   if (chip) {
     for (let i = 0; i < 4; i++) {
       Tex.playerFrames.push(new PIXI.Texture(chip.baseTexture, new PIXI.Rectangle(i * 16, 0, 16, 16)));
+    }
+    // 被弾/回避フラッシュ用の白シルエット。元ドットの不透明ピクセルだけを
+    // 白で塗りつぶすので、tint してもドットの外へ色がはみ出さない。
+    const src = chip.baseTexture.resource.source;
+    for (let i = 0; i < 4; i++) {
+      const cv = document.createElement('canvas');
+      cv.width = 16; cv.height = 16;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(src, i * 16, 0, 16, 16, 0, 0, 16, 16);
+      ctx.globalCompositeOperation = 'source-in';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 16, 16);
+      const t = PIXI.Texture.from(cv);
+      t.baseTexture.scaleMode = PIXI.SCALE_MODES.NEAREST;
+      Tex.playerSilhouettes.push(t);
     }
   }
   // アイコン類
@@ -178,10 +194,18 @@ const Game = {
     this.attackLayer = new PIXI.Container(); this.world.addChild(this.attackLayer);
     this.fxGraphics = new PIXI.Graphics(); this.world.addChild(this.fxGraphics);   // 攻撃・ボスHPバー等の図形描画
     this.playerLayer = new PIXI.Container(); this.world.addChild(this.playerLayer);
+    // プレイヤー足元の影（プレイヤーだけに付ける）。プレイヤースプライトより先に
+    // 追加して、必ずドットの下へ描かれるようにする。
+    this.playerShadow = new PIXI.Graphics();
+    this.playerShadow.beginFill(0x000000, 0.25);
+    this.playerShadow.drawEllipse(0, 0, PLAYER_SPRITE_SIZE * 0.30, PLAYER_SPRITE_SIZE * 0.085);
+    this.playerShadow.endFill();
+    this.playerLayer.addChild(this.playerShadow);
     this.particles = new Particles(this.world);
     this.damageNumbers = new DamageNumbers(this.world);
     this.avoidFx = []; // 回避演出（フラッシュ＋テキスト）の進行中リスト
     this.avoidTextPool = [];
+    this.playerFlashFx = []; // 被弾/回避のプレイヤーシルエットフラッシュ
     this.ringFx = []; // 汎用リングフラッシュ（被弾・ボス撃破）の進行中リスト
     this.textFx = []; // 汎用フローティングテキスト（回復・レベルアップ）の進行中リスト
     this.textPools = new Map();
@@ -249,6 +273,14 @@ const Game = {
 
   /* ---------- ゲームの開始・リセット ---------- */
   resetGame() {
+    // 進行中のプレイヤーシルエットフラッシュを破棄（前のプレイヤー位置に残さない）
+    if (this.playerFlashFx) {
+      for (const fx of this.playerFlashFx) {
+        if (fx.s.parent) fx.s.parent.removeChild(fx.s);
+        fx.s.destroy();
+      }
+      this.playerFlashFx.length = 0;
+    }
     // 既存スプライトの破棄
     for (const e of [...this.enemies]) this.removeEnemy(e);
     for (const g of [...this.gems]) this.releaseGemSprite(g);
@@ -456,6 +488,7 @@ const Game = {
     // 11) 演出
     this.particles.update(dtF);
     this.updateAvoidanceFx(dtF);
+    this.updatePlayerFlashFx(dtF);
     this.updateRingFx(dtF);
     this.updateTextFx(dtF);
     this.damageNumbers.update(dtF);
@@ -676,16 +709,11 @@ const Game = {
   },
 
   /* 回避成功時の演出（原作 effects/particles.py の AvoidanceParticle + LuckyText）:
-     プレイヤー位置に青い半透明フラッシュ（18フレーム、α最大150、半径 size×1.25→1.0）、
+     プレイヤーのドット絵シルエットを青く光らせ（18フレーム、α最大150）、
      頭上にシアンの「Lukey!」が20フレーム上昇表示（フェードイン4f／フェードアウト6f） */
   spawnAvoidanceFx() {
     const p = this.player;
-    const s = new PIXI.Sprite(Tex.circle);
-    s.anchor.set(0.5); s.tint = 0x0000ff; s.alpha = 150 / 255;
-    s.position.set(p.x, p.y);
-    const d0 = 2 * p.size * 1.25 * (32 / 30); // Tex.circle の実描画径30pxに対する換算
-    s.width = d0; s.height = d0;
-    this.world.addChild(s);
+    this.spawnPlayerFlashFx(0x0000ff, 18, 150 / 255);
     let t = this.avoidTextPool.pop();
     if (!t) {
       t = new PIXI.Text('Lukey!', { fontFamily: 'NotoSansJP, sans-serif', fontSize: 14, fill: 0x00ffff, fontWeight: 'bold' });
@@ -694,21 +722,12 @@ const Game = {
     }
     t.position.set(p.x, p.y - p.size - 6);
     t.alpha = 0; t.visible = true;
-    this.avoidFx.push({ s, t, life: 0 });
+    this.avoidFx.push({ t, life: 0 });
   },
   updateAvoidanceFx(dtF) {
     const kept = [];
     for (const fx of this.avoidFx) {
       fx.life += dtF;
-      if (fx.s) {
-        const fr = fx.life / 18;
-        if (fr >= 1) { this.world.removeChild(fx.s); fx.s.destroy(); fx.s = null; }
-        else {
-          fx.s.alpha = (150 / 255) * (1 - fr);
-          const d = 2 * this.player.size * (1.25 - 0.25 * fr) * (32 / 30);
-          fx.s.width = d; fx.s.height = d;
-        }
-      }
       if (fx.life >= 20) {
         fx.t.visible = false;
         this.avoidTextPool.push(fx.t);
@@ -720,6 +739,50 @@ const Game = {
       }
     }
     this.avoidFx = kept;
+  },
+
+  /* 被弾/回避フラッシュ: プレイヤーの現在フレームと同じ白シルエットを tint して
+     ドットの形のまま重ねる（円スプライトは使わない）。ドットの透明部分には
+     色が乗らないため、シルエットの外へ赤/青がはみ出さない。
+     プレイヤーに追従し、αだけをフレーム数に応じてフェードアウトする。 */
+  spawnPlayerFlashFx(color, durationFrames, alpha0) {
+    if (!Tex.playerSilhouettes.length) return;
+    const p = this.player;
+    const s = new PIXI.Sprite(Tex.playerSilhouettes[p.frameIndex] || Tex.playerSilhouettes[0]);
+    s.anchor.set(0.5);
+    s.tint = color;
+    s.alpha = alpha0;
+    s.position.set(p.x, p.y);
+    const fw = (s.texture.frame && s.texture.frame.width) || 16;
+    const mag = PLAYER_SPRITE_SIZE / fw;
+    s.scale.x = (p.facingRight ? -1 : 1) * mag;
+    s.scale.y = mag;
+    this.playerLayer.addChild(s);
+    this.playerFlashFx.push({ s, life: 0, dur: durationFrames, a0: alpha0 });
+  },
+  updatePlayerFlashFx(dtF) {
+    if (!this.playerFlashFx.length) return;
+    const p = this.player;
+    const kept = [];
+    for (const fx of this.playerFlashFx) {
+      fx.life += dtF;
+      const fr = fx.life / fx.dur;
+      if (!p || fr >= 1) {
+        if (fx.s.parent) fx.s.parent.removeChild(fx.s);
+        fx.s.destroy();
+        continue;
+      }
+      const tex = Tex.playerSilhouettes[p.frameIndex] || Tex.playerSilhouettes[0];
+      if (tex && fx.s.texture !== tex) fx.s.texture = tex;
+      fx.s.position.set(p.x, p.y);
+      const fw = (fx.s.texture.frame && fx.s.texture.frame.width) || 16;
+      const mag = PLAYER_SPRITE_SIZE / fw;
+      fx.s.scale.x = (p.facingRight ? -1 : 1) * mag;
+      fx.s.scale.y = mag;
+      fx.s.alpha = fx.a0 * (1 - fr);
+      kept.push(fx);
+    }
+    this.playerFlashFx = kept;
   },
 
   /* 汎用リングフラッシュ（原作 HurtFlash=被弾時の赤円 / BossDeathFlash=拡大する黄円）:
@@ -808,7 +871,7 @@ const Game = {
           continue;
         }
         p.hp -= Math.max(1, Math.floor(e.damage - p.defense()));
-        this.spawnRingFx(p.x, p.y, 0xff0000, 12, p.size * 1.25, p.size, 150 / 255); // 原作 HurtFlash
+        this.spawnPlayerFlashFx(0xff0000, 12, 150 / 255); // 原作 HurtFlash（プレイヤーシルエット）
         p.setNormalInvincible(this);
         AudioSys.playSound('player_hurt');
         this.particles.burst(p.x, p.y, 0xff4040, 4);
@@ -826,7 +889,7 @@ const Game = {
           if (!p.canTakeDamage(this)) continue;
           if (Math.random() < p.avoidance()) { this.spawnAvoidanceFx(); continue; }
           p.hp -= Math.max(1, Math.floor(pr.damage - p.defense()));
-          this.spawnRingFx(p.x, p.y, 0xff0000, 12, p.size * 1.25, p.size, 150 / 255); // 原作 HurtFlash
+          this.spawnPlayerFlashFx(0xff0000, 12, 150 / 255); // 原作 HurtFlash（プレイヤーシルエット）
           p.setNormalInvincible(this);
           AudioSys.playSound('player_hurt');
           this.particles.burst(p.x, p.y, 0xff4040, 4);
@@ -1031,6 +1094,10 @@ const Game = {
     // プレイヤー（歩行フレーム切替・無敵点滅・向き反転）
     const spr = p.sprite;
     spr.position.set(p.x, p.y);
+    // 足元の影（プレイヤーのみ）。ドットの下端付近に薄く落とす
+    if (this.playerShadow) {
+      this.playerShadow.position.set(p.x, p.y + PLAYER_SPRITE_SIZE / 2 - 3);
+    }
     if (Tex.playerFrames.length) {
       const moving = p.movementDx !== 0 || p.movementDy !== 0;
       if (moving && this.state === 'playing') {
