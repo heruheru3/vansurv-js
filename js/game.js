@@ -20,11 +20,33 @@ const Tex = {
   circle: null,         // 白円テクスチャ（tintで色付けして使い回す）
 };
 function loadImageTexture(src) {
+  // 配信側が src を実URLへ差し替える前に 1x1 の透明ピクセルを一時設定する
+  // 環境（スペース）では、その load で確定させると実画像が二度と読めない。
+  // 実寸（naturalWidth/Height > 1）になるまで確定させず、load イベントと
+  // ポーリングの両方で監視し、一過性の error では確定させない（上限10秒で
+  // null にフォールバックし、起動は止めない）。通常環境では即時に完了する。
   return new Promise((resolve) => {
     const img = new Image();
-    img.onload = () => resolve(PIXI.Texture.from(img));
-    img.onerror = () => resolve(null);
+    let done = false;
+    let iv = null;
+    let to = null;
+    const finish = (tex) => {
+      if (done) return;
+      done = true;
+      if (iv) clearInterval(iv);
+      if (to) clearTimeout(to);
+      img.onload = null;
+      resolve(tex);
+    };
+    const check = () => {
+      if (img.naturalWidth > 1 && img.naturalHeight > 1) finish(PIXI.Texture.from(img));
+    };
+    img.onload = check;
+    img.onerror = () => { /* 差し替え中の一過性 error では確定しない */ };
+    iv = setInterval(check, 250);
+    to = setTimeout(() => finish(null), 10000);
     img.src = src;
+    check(); // キャッシュ済みで即時完了している場合
   });
 }
 async function loadTextures() {
