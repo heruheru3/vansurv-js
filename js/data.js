@@ -59,14 +59,18 @@ const GameData = {
   descriptions: null,
   mapCsvText: null, // ステージCSVの生テキスト（Stageクラスへ渡す）
 
-  async loadAll() {
+  /* stageDef（js/stages.js）で指定されたマップと敵呼び出しルールを読み込む。
+     敵・ボスの能力値と説明は全ステージ共通。 */
+  async loadAll(stageDef) {
+    const def = stageDef || {};
     const [enemyCsv, bossCsv, rulesCsv, descJson, mapCsv] = await Promise.all([
       fetchText('data/enemy_stats.csv'),
       fetchText('data/boss_stats.csv'),
-      fetchText('data/enemy_spawn_rules.csv'),
+      fetchText(def.spawnRulesFile || 'data/enemy_spawn_rules.csv'),
       fetchText('data/descriptions.json'),
-      fetchText(C.MAP_FILE),
+      fetchText(def.mapFile || C.MAP_FILE),
     ]);
+    this.spawnRules = []; // ステージ切り替え時の再読み込みに備えてリセット
 
     for (const r of csvToObjects(enemyCsv)) {
       const no = parseInt(r.enemy_no, 10);

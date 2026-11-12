@@ -204,8 +204,12 @@ const Game = {
     if (window.visualViewport) window.visualViewport.addEventListener('resize', () => this.applyViewSize());
     this.initInput();
 
+    // ステージ定義（js/stages.js）: ステージ = マップ + 敵呼び出しルールのセット
+    this.stageDef = StageDefs[StageDefs.current] || StageDefs.stage1;
+    this.applyStageDef();
+
     try {
-      await GameData.loadAll();
+      await GameData.loadAll(this.stageDef);
       await loadTextures();
       // 初登場の瞬間にテクスチャ転送でフレームが止まらないよう、敵・ボス画像は
       // 起動時にまとめてGPUへ載せておく（従来は初登場時に1枚ずつ転送されていた）
@@ -216,6 +220,9 @@ const Game = {
     }
     generateShapeTextures(this.app.renderer);
     this.stage = Stage.fromCSV(GameData.mapCsvText);
+    // ワールド寸法はマップ（ステージ）から決まる
+    C.WORLD_WIDTH = this.stage.width * C.TILE_SIZE;
+    C.WORLD_HEIGHT = this.stage.height * C.TILE_SIZE;
 
     // レイヤー構成（奥→手前）: マップ / ジェム・アイテム / ボックス / 敵 / 攻撃 / プレイヤー / 演出
     this.world = new PIXI.Container();
@@ -261,6 +268,22 @@ const Game = {
      縦画面なら縦画面、正方形なら正方形、そのままの形で遊べる。
      C.SCREEN_WIDTH/HEIGHT を実サイズへ更新すると、カメラ・スポーン範囲・
      ミニマップ枠など C.SCREEN_* を参照する全ロジックが追従する。 */
+
+  /* ステージ定義（js/stages.js）を実行時定数 C へ流し込む。
+     ステージ時間・出現ペース・画面内上限はステージ側の設定であり、
+     エンジン側は従来どおり C を参照する（ステージ切替時はここで差し替わる） */
+  applyStageDef() {
+    const def = this.stageDef;
+    if (!def) return;
+    if (def.survivalTime) C.SURVIVAL_TIME = def.survivalTime;
+    const s = def.spawn || {};
+    if (s.intervalStartFrames) C.SPAWN_INTERVAL_START_FRAMES = s.intervalStartFrames;
+    if (s.intervalMinFrames) C.SPAWN_INTERVAL_MIN_FRAMES = s.intervalMinFrames;
+    if (s.intervalStepSec) C.SPAWN_INTERVAL_STEP_SEC = s.intervalStepSec;
+    if (s.batchStepSec) C.SPAWN_BATCH_STEP_SEC = s.batchStepSec;
+    if (s.capStages) C.ONSCREEN_CAP_STAGES = s.capStages;
+    if (s.maxEnemies) C.MAX_ENEMIES_ON_SCREEN = s.maxEnemies;
+  },
 
   /* 初期ズーム: 画面の短辺の 1/PLAYER_SIZE_DIVISOR がプレイヤーの画面上
      サイズ（PLAYER_SPRITE_SIZE × zoom）になる倍率。リサイズでは再計算
@@ -449,6 +472,7 @@ const Game = {
     this.playerLayer.addChild(this.player.sprite);
     this.enemies = []; this.gems = []; this.items = []; this.attacks = [];
     this.boxManager = new BoxManager(0);
+    this.applyStageDef(); // 出現ペースはステージ定義から（ディレクター生成前に適用）
     this.director = new SpawnDirector();
     this.nowMs = 0; this.gameTime = 0;
     this.kills = 0; this.sessionMoney = 0; this.totalExpGained = 0;
@@ -470,7 +494,7 @@ const Game = {
       this.player.applyChoice(value);
       this._hudItemsDirty = true;
       this.state = 'playing';
-      AudioSys.playBgm('level1'); // 原作 main.py は level1 を再生
+      AudioSys.playBgm(this.stageDef.bgm || 'level1'); // BGMはステージ定義から
     });
   },
 

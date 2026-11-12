@@ -466,3 +466,25 @@ python3 -m http.server 8000
   500 になり、出現約108体/秒で即座に充填される計算）。
   ※ディレクターの出現間隔は経過で段階的に下がる状態値のため、
   時刻ジャンプだけの検証では充填を過小評価する（実ランでは追従する）。
+
+## 2026-11-12 ステージ定義の分離（ステージ1）
+
+- 浩之の定義: ステージ = マップ + 敵呼び出しルールのセット。今回の
+  設定（200秒・出現加速・上限500）をステージ1として独立させた。
+- 新規 js/stages.js（StageDefs）: ステージごとの定義を集約。
+  stage1 = { mapFile: map/stage_map.csv, spawnRulesFile:
+  data/enemy_spawn_rules.csv, survivalTime: 200, bgm: level1,
+  spawn: { intervalStart 20f / min 5f / step 10s / batchStep 20s /
+  capStages [[0,100]..[180,500]] / maxEnemies 1000 } }。
+  敵・ボスの能力値CSVは全ステージ共通の図鑑として残す。
+- 配線: GameData.loadAll(stageDef) が定義のパスからマップとルールを
+  読む（spawnRules は再読み込みに備えリセット）。game.js は
+  boot と resetGame で applyStageDef() を実行し、時間・出現ペース・
+  上限を実行時定数 C へ流し込む。ワールド寸法はマップから導出
+  （80×45×64 = 5120×2880、従来と同一）。BGM名も定義から取得。
+  constants.js の同名項目は既定値として残置。
+- 実測: 定義の全値が C へ反映（時間200・上限末尾180/500・間隔20f・
+  ルール18件・タイマー"200"）。定義の survivalTime を書き換えて
+  リセットすると次ランのタイマーが追従する継ぎ目も確認。エラー0件。
+- ステージ追加手順は js/stages.js のヘッダに明記（マップCSV＋
+  ルールCSV＋エントリ追加。選択UIは未実装で current は stage1 固定）。

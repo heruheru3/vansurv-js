@@ -16,7 +16,7 @@ const C = {
   // 画面上サイズになる（2026-11-12 浩之様の指定: 短辺の 1/10 程度）
   PLAYER_SIZE_DIVISOR: 10,
   FPS: 60,
-  SURVIVAL_TIME: 200,               // seconds to survive = game clear（2026-11-12 浩之様の指定: 200秒ステージ）
+  SURVIVAL_TIME: 200,               // seconds to survive = game clear（ステージ定義 js/stages.js が正本。ここは既定値）
 
   WORLD_WIDTH: 1280 * 4,            // 5120
   WORLD_HEIGHT: 720 * 4,            // 2880
@@ -33,7 +33,7 @@ const C = {
   TILE_SIZE: 64,                    // TEST_TILE_SIZE
   MAP_TILES_WIDTH: 80,
   MAP_TILES_HEIGHT: 45,
-  MAP_FILE: 'map/stage_map.csv',
+  MAP_FILE: 'map/stage_map.csv',    // ステージ定義（js/stages.js）が無い場合の予備
 
   INVINCIBLE_MS: 200,               // player invincibility after a hit
 
@@ -45,7 +45,7 @@ const C = {
   PARTICLE_TRIM_TO: 300,
   MAX_GEMS_ON_SCREEN: 100,
   MAX_ENEMIES_ON_SCREEN: 1000,      // 負荷確認のため 300→1000 に増量中（2026-11-11 浩之様の指定）
-  // 出現ペース（2026-11-12 浩之様の指定: 200秒で画面に500体へ加速する仕様）
+  // 出現ペース（ステージ定義 js/stages.js が正本。ここは既定値）
   SPAWN_INTERVAL_START_FRAMES: 20,  // 出現間隔の初期値（フレーム）
   SPAWN_INTERVAL_MIN_FRAMES: 5,     // 出現間隔の下限（フレーム）
   SPAWN_INTERVAL_STEP_SEC: 10,      // この秒数ごとに間隔を1フレーム短縮
