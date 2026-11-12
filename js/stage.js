@@ -34,7 +34,7 @@ const TILE_SEMANTICS = {
 0: { color: 0x242424, obstacle: false, weaponSolid: false}, // MOREDARK_GRAY
 1: { color: 0x303030, obstacle: false, weaponSolid: false}, // DARK_GRAY
 2: { color: 0x808080, obstacle: false, weaponSolid: false}, // GRAY
-3: { color: 0xc0c0c0, obstacle: false, weaponSolid: false}, // LIGHT_GRAY
+3: { color: 0x3d3d42, obstacle: false, weaponSolid: false}, // 石畳（周囲に合わせた暗いトーン）
 4: { color: 0x402010, obstacle: false, weaponSolid: false}, // 土
 5: { color: 0x204020, border: 0x102010, obstacle: true, weaponSolid: true}, // 森
 6: { color: 0x404020, obstacle: false, weaponSolid: false}, // 道（武器貫通）

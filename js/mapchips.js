@@ -51,8 +51,10 @@ const MapChips = (() => {
 
   /* パレット */
   const PAL = {
-    groundBase: { 0: '#232323', 1: '#2e2e2e', 2: '#7d7d7d', 3: '#bcbcbc' },
+    groundBase: { 0: '#232323', 1: '#2e2e2e', 2: '#7d7d7d', 3: '#3a3a3f' },
     groundSpeck: ['#2b2b2b', '#383838', '#1b1b1b', '#454545'],
+    // 石畳（タイル3）: 周囲の地面に合わせた暗いトーンの石と目地
+    stoneBase: ['#333338', '#38383e', '#3d3d42', '#313136'], stoneSeam: '#232327', stoneSpeck: ['#2b2b30', '#45454b'],
     sand: '#7d6c45',
     roadBase: '#4c4526', roadLight: '#5d5530', roadDark: '#322e1b', roadStone: '#6e6a55',
     waterBase: '#1c2a52', waterMid: '#27407a', waterLight: '#3d5a99', waterDeep: '#131f3f', foam: '#cfe8ef', shallow: '#2e4d86',
@@ -241,10 +243,22 @@ const MapChips = (() => {
         speck([PAL.soilStone], 3);
         break;
       }
-      default: { // ground (0,1,2,3)
-        fill(PAL.groundBase[id] || PAL.groundBase[0]);
-        speck(PAL.groundSpeck, id >= 2 ? 10 : 15);
-        if (rand() < 0.5) dot(Math.floor(rand() * DOTS), Math.floor(rand() * DOTS), '#4a4a4a'); // 小石
+      default: { // ground (0,1,2) と石畳 (3)
+        if (id === 3) {
+          // 石畳: 目地を入れて舗装と分かるようにしつつ、トーンは周囲の
+          // 地面に合わせた暗さに留める（明るすぎると白いダメージ数字や
+          // エフェクトが見えにくくなるため。2026-11-12 浩之様の指摘）
+          fill(PAL.stoneSeam);
+          for (let sy = 0; sy < 2; sy++) for (let sx = 0; sx < 2; sx++) {
+            const c = PAL.stoneBase[Math.floor(rand() * PAL.stoneBase.length)];
+            for (let dy = 0; dy < 7; dy++) for (let dx = 0; dx < 7; dx++) dot(sx * 8 + 1 + dx, sy * 8 + 1 + dy, c);
+          }
+          speck(PAL.stoneSpeck, 14);
+        } else {
+          fill(PAL.groundBase[id] || PAL.groundBase[0]);
+          speck(PAL.groundSpeck, id >= 2 ? 10 : 15);
+          if (rand() < 0.5) dot(Math.floor(rand() * DOTS), Math.floor(rand() * DOTS), '#4a4a4a'); // 小石
+        }
         // 水に接する辺には砂地の縁取り（地面側から岸を作る）
         if (isWater(0, -1)) edgeBand('n', [PAL.sand]);
         if (isWater(0, 1)) edgeBand('s', [PAL.sand]);
