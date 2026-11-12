@@ -19,8 +19,9 @@ const C = {
   // （ステージ定義 js/stages.js が正本。ここは既定値）
   POP_AREA_TILES: 20,
   // 初期ズームの基準: 画面の縦横のうち短い方 ÷ この値 が、プレイヤーの
-  // 画面上サイズになる（2026-11-12 浩之様の指定: 短辺の 1/10 程度）
-  PLAYER_SIZE_DIVISOR: 10,
+  // 画面上サイズになる（2026-11-12 浩之様の指定: 当初は短辺の 1/10、
+  // 同日「初期ズームを少し引いて」で 1/12 へ）
+  PLAYER_SIZE_DIVISOR: 12,
   FPS: 60,
   SURVIVAL_TIME: 200,               // seconds to survive = game clear（ステージ定義 js/stages.js が正本。ここは既定値）
 
