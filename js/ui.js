@@ -81,8 +81,8 @@ const UI = {
     this.els['xp-bar'].style.width = (xpRatio * 100).toFixed(1) + '%';
     this.els['lv-text'].textContent = 'Lv ' + p.level;
     const remain = Math.max(0, C.SURVIVAL_TIME - game.gameTime);
-    const mm = Math.floor(remain / 60), ss = Math.floor(remain % 60);
-    this.els['timer-text'].textContent = mm + ':' + String(ss).padStart(2, '0');
+    // 残り時間は分:秒ではなく秒のみのカウントダウン表示（浩之様の指定）
+    this.els['timer-text'].textContent = String(Math.ceil(remain));
     this.els['kills-text'].textContent = '撃破 ' + game.kills;
     this.els['money-text'].textContent = game.sessionMoney + ' G';
     this.els['fps-text'].textContent = Math.round(game.fps) + ' FPS / 敵 ' + game.enemies.length;

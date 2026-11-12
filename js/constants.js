@@ -16,7 +16,7 @@ const C = {
   // 画面上サイズになる（2026-11-12 浩之様の指定: 短辺の 1/10 程度）
   PLAYER_SIZE_DIVISOR: 10,
   FPS: 60,
-  SURVIVAL_TIME: 600,               // seconds to survive = game clear（負荷確認のため 180→600 に延長中。2026-11-11 浩之様の指定）
+  SURVIVAL_TIME: 200,               // seconds to survive = game clear（2026-11-12 浩之様の指定: 200秒ステージ）
 
   WORLD_WIDTH: 1280 * 4,            // 5120
   WORLD_HEIGHT: 720 * 4,            // 2880
@@ -45,13 +45,14 @@ const C = {
   PARTICLE_TRIM_TO: 300,
   MAX_GEMS_ON_SCREEN: 100,
   MAX_ENEMIES_ON_SCREEN: 1000,      // 負荷確認のため 300→1000 に増量中（2026-11-11 浩之様の指定）
-  // 出現ペース（負荷確認用の増量仕様。原作は間隔60f→最小10f・1回あたり1→3体）
-  SPAWN_INTERVAL_START_FRAMES: 30,  // 出現間隔の初期値（フレーム）
+  // 出現ペース（2026-11-12 浩之様の指定: 200秒で画面に500体へ加速する仕様）
+  SPAWN_INTERVAL_START_FRAMES: 20,  // 出現間隔の初期値（フレーム）
   SPAWN_INTERVAL_MIN_FRAMES: 5,     // 出現間隔の下限（フレーム）
   SPAWN_INTERVAL_STEP_SEC: 10,      // この秒数ごとに間隔を1フレーム短縮
-  SPAWN_BATCH_STEP_SEC: 30,         // この秒数ごとに1回あたりの出現数を+1（上限なし）
+  SPAWN_BATCH_STEP_SEC: 20,         // この秒数ごとに1回あたりの出現数を+1（上限なし）
   // 画面付近の敵数上限（難易度レベル＝経過時間帯ごとに増加）: [開始秒, 上限]
-  ONSCREEN_CAP_STAGES: [[0, 100], [60, 200], [120, 350], [240, 550], [360, 750], [480, 1000]],
+  // 180秒で上限500に到達し、200秒（クリア）まで500体を維持する
+  ONSCREEN_CAP_STAGES: [[0, 100], [40, 180], [80, 260], [120, 340], [160, 430], [180, 500]],
   OFFSCREEN_REPOP_MARGIN: 160,      // 画面端からこの距離(px)を超えて外れた敵は回収対象
   OFFSCREEN_REPOP_INTERVAL_SEC: 1,  // 画面外敵の回収チェック間隔（秒）
 
