@@ -197,7 +197,7 @@ const Game = {
     PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
     this.app = new PIXI.Application({ width: window.innerWidth, height: window.innerHeight, backgroundColor: 0x000000, antialias: false });
     document.getElementById('stage').prepend(this.app.view);
-    this.zoom = C.ZOOM_DEFAULT; // 既定は少し引いた画角（浩之様の指定）
+    this.zoom = this.initialZoom(); // 初期ズームは画面の短辺基準で算出
     this.applyViewSize();
     window.addEventListener('resize', () => this.applyViewSize());
     window.addEventListener('orientationchange', () => this.applyViewSize());
@@ -261,6 +261,20 @@ const Game = {
      縦画面なら縦画面、正方形なら正方形、そのままの形で遊べる。
      C.SCREEN_WIDTH/HEIGHT を実サイズへ更新すると、カメラ・スポーン範囲・
      ミニマップ枠など C.SCREEN_* を参照する全ロジックが追従する。 */
+
+  /* 初期ズーム: 画面の短辺の 1/PLAYER_SIZE_DIVISOR がプレイヤーの画面上
+     サイズ（PLAYER_SPRITE_SIZE × zoom）になる倍率。リサイズでは再計算
+     しない（初期状態のバランス付けが目的で、途中の画角は保つ） */
+  initialZoom() {
+    const vv = window.visualViewport;
+    const w = vv ? vv.width : window.innerWidth;
+    const h = vv ? vv.height : window.innerHeight;
+    const short = Math.min(w || 0, h || 0);
+    if (!short) return C.ZOOM_DEFAULT;
+    const z = short / (PLAYER_SPRITE_SIZE * C.PLAYER_SIZE_DIVISOR);
+    return Math.max(C.ZOOM_MIN, Math.min(C.ZOOM_MAX, z));
+  },
+
   applyViewSize() {
     // iPhone Safari のツールバー表示/非表示で実際に見える範囲が変わるため、
     // visualViewport（見えている領域そのもの）を優先する

@@ -6,11 +6,15 @@ const C = {
   // 書き換える（解像度＝ウインドウサイズ。縦画面・正方形でもそのまま遊べる）
   SCREEN_WIDTH: 1280,
   SCREEN_HEIGHT: 720,
-  // ズーム（ワールド→画面の倍率）。既定は少し引いた画角（2026-11-11 浩之様の指定）。
+  // ズーム（ワールド→画面の倍率）。初期値は画面の短辺から算出する
+  // （下の PLAYER_SIZE_DIVISOR 参照）。ZOOM_DEFAULT は算出できない時の予備。
   // ゲーム中はホイール／ピンチで ZOOM_MIN..ZOOM_MAX の範囲で変更できる
   ZOOM_DEFAULT: 0.8,
   ZOOM_MIN: 0.45,
-  ZOOM_MAX: 1.6,
+  ZOOM_MAX: 3.0,
+  // 初期ズームの基準: 画面の縦横のうち短い方 ÷ この値 が、プレイヤーの
+  // 画面上サイズになる（2026-11-12 浩之様の指定: 短辺の 1/10 程度）
+  PLAYER_SIZE_DIVISOR: 10,
   FPS: 60,
   SURVIVAL_TIME: 600,               // seconds to survive = game clear（負荷確認のため 180→600 に延長中。2026-11-11 浩之様の指定）
 
