@@ -156,7 +156,7 @@ this.lastAttackMs = 0;
 // ノックバック（enemy.py apply_knockback / update_knockback）
 this.knockbackVx = 0; this.knockbackVy = 0;
 this.knockbackTimer = 0; this.knockbackCooldown = 0;
-// ハマり検出→noclip（原作: 3秒動けなければ1秒間地形無視。本移植では正味移動量でも検出する）
+// ハマり検出→noclip（原作: 3秒動けなければ1秒間地形無視。本移植では正味移動量でも検出し、定数で早めに調整）
 this.stuckTimer = 0; this.noclipMode = false; this.noclipTimer = 0;
 this.stuckAnchorX = this.x; this.stuckAnchorY = this.y; this.stuckAnchorTimer = 0;
 // アニメーション・表示
@@ -242,29 +242,31 @@ const moved = Math.hypot(this.x - startX, this.y - startY);
 this.isMoving = moved > 0.1;
 if (this.isMoving) this.animationTime += dtF / 60;
 
-// ハマり検出（2系統）
-// (a) 原作方式: 毎フレームの移動量が1px未満なら加算し、3秒で noclip。
-// (b) 正味移動量方式: 行動が移動を求めているのに 1.5秒間で正味12px未満しか
-//     進めていない場合も詰まりとみなす。群衆や壁際で小刻みに揺れて
-//     「毎フレーム1px以上は動く」ため (a) をすり抜ける個体を救済する
-//     （重なり回避でロックされる問題への対処）。
+// ハマり検出（2系統）。一度は地形に引っかかるが、その後は noclip で
+// 地形を超えられるようにする。地形が複雑になったため、脱出の発動は
+// 早めに調整してある（2026-11-12 浩之様の指定）。
+// (a) 毎フレーム方式: 移動量が1px未満の状態が ENEMY_STUCK_FRAME_SEC 続いたら noclip。
+// (b) 正味移動量方式: 行動が移動を求めているのに ENEMY_STUCK_WINDOW_SEC の間で
+//     正味 ENEMY_STUCK_NET_PX 未満しか進めていない場合も詰まりとみなす。
+//     群衆や壁際で小刻みに揺れて「毎フレーム1px以上は動く」ため (a) を
+//     すり抜ける個体を救済する（重なり回避でロックされる問題への対処）。
 if (moved < 1.0) {
 this.stuckTimer += dtF / 60;
-if (this.stuckTimer >= 3.0 &&!this.noclipMode) { this.noclipMode = true; this.noclipTimer = 0;}
+if (this.stuckTimer >= C.ENEMY_STUCK_FRAME_SEC &&!this.noclipMode) { this.noclipMode = true; this.noclipTimer = 0;}
 } else this.stuckTimer = 0;
 if (!wantMove || this.noclipMode) {
 this.stuckAnchorX = this.x; this.stuckAnchorY = this.y; this.stuckAnchorTimer = 0;
 } else {
 this.stuckAnchorTimer += dtF / 60;
-if (this.stuckAnchorTimer >= 1.5) {
+if (this.stuckAnchorTimer >= C.ENEMY_STUCK_WINDOW_SEC) {
 const net = Math.hypot(this.x - this.stuckAnchorX, this.y - this.stuckAnchorY);
-if (net < 12) { this.noclipMode = true; this.noclipTimer = 0;}
+if (net < C.ENEMY_STUCK_NET_PX) { this.noclipMode = true; this.noclipTimer = 0;}
 this.stuckAnchorX = this.x; this.stuckAnchorY = this.y; this.stuckAnchorTimer = 0;
 }
 }
 if (this.noclipMode) {
 this.noclipTimer += dtF / 60;
-if (this.noclipTimer >= 1.0 &&!game.stage.cornersBlocked(this.x, this.y, Math.floor(this.size / 2))) {
+if (this.noclipTimer >= C.ENEMY_NOCLIP_MIN_SEC &&!game.stage.cornersBlocked(this.x, this.y, Math.floor(this.size / 2))) {
 this.noclipMode = false; this.noclipTimer = 0;
 }
 }

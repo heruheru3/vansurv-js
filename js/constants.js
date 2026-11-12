@@ -62,6 +62,12 @@ const C = {
   POP_CAP_STAGES: [[0, 100], [40, 180], [80, 260], [120, 340], [160, 430], [180, 500]],
   POP_REPOP_MARGIN: 160,            // ポップエリアからこの距離(px)を超えて外れた敵は回収対象
   POP_REPOP_INTERVAL_SEC: 1,        // エリア外敵の回収チェック間隔（秒）
+  // 敵の地形ハマり脱出: 一度は地形に引っかかるが、その後は地形を
+  // 超えられるようにする（2026-11-12 浩之様の指定で脱出を早めた）
+  ENEMY_STUCK_FRAME_SEC: 1.5,       // 毎フレームの移動量が1px未満の状態がこの秒数続いたら脱出
+  ENEMY_STUCK_WINDOW_SEC: 0.8,      // 正味移動量を測る間隔（秒）
+  ENEMY_STUCK_NET_PX: 24,           // 上の間隔でこの px 未満しか進めていなければ詰まりとみなす
+  ENEMY_NOCLIP_MIN_SEC: 1.0,        // 脱出（地形無視）の最短継続時間（秒）。地形の外に出るまで続く
 
   NATURAL_HEAL_INTERVAL_MS: 2000,
   NATURAL_HEAL_AMOUNT: 0,           // + HP-subitem level per tick (player.py)
