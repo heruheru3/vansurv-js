@@ -51,8 +51,15 @@ const AudioSys = {
   // SE の ON/OFF（任意設定）。OFF の間 playSound は即座に戻る
   sfxEnabled: true,
 
+  // BGM の ON/OFF（任意設定）。iPhone では BGM（要素再生）が始まると
+  // 音声セッションを奪われて SE（WebAudio）が消える現象があるため、
+  // 切り分けと回避のために SE だけのモードを用意する
+  bgmEnabled: true,
+  _bgmRequested: null, // 最後に要求されたBGM名（ONに戻した時の再開用）
+
   init() {
     try { this.sfxEnabled = localStorage.getItem('vansurv_se') !== '0'; } catch (e) { /* 既定 ON */ }
+    try { this.bgmEnabled = localStorage.getItem('vansurv_bgm') !== '0'; } catch (e) { /* 既定 ON */ }
     // フォールバック用プール（WebAudio が無い環境でのみ使う）
     for (const n of this.SFX_NAMES) {
       const pool = [];
@@ -221,8 +228,22 @@ const AudioSys = {
     };
   },
 
+  setBgmEnabled(on) {
+    this.bgmEnabled = !!on;
+    try { localStorage.setItem('vansurv_bgm', on ? '1' : '0'); } catch (e) { /* 保存失敗は無視 */ }
+    if (!on) {
+      this._pendingBgm = null;
+      this.stopMusic();
+    } else if (this.unlocked && this._bgmRequested) {
+      this.playBgm(this._bgmRequested);
+    }
+    return this.bgmEnabled;
+  },
+
   /* name: 'level0'（選択画面）| 'level1'（ゲーム中）。原作 main.py は level1 を再生 */
   playBgm(name) {
+    this._bgmRequested = name;
+    if (!this.bgmEnabled) return;
     if (!this.unlocked) { this._pendingBgm = name; return; }
     if (this.bgmName === name && this.bgm && !this.bgm.paused) return;
     this.stopMusic();

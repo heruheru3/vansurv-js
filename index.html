@@ -42,6 +42,9 @@
   #se-toggle { position: absolute; right: 10px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); pointer-events: auto;
     font-family: inherit; font-size: 12px; color: #ddd; background: rgba(0,0,0,0.55);
     border: 1px solid #888; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+  #bgm-toggle { position: absolute; right: 84px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); pointer-events: auto;
+    font-family: inherit; font-size: 12px; color: #ddd; background: rgba(0,0,0,0.55);
+    border: 1px solid #888; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
   /* ---------- メニュー共通 ---------- */
   .overlay { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.65); z-index: 10; }
   .overlay h1 { font-size: 34px; margin-bottom: 18px; text-shadow: 0 2px 6px #000; }
@@ -177,6 +180,7 @@
         <div id="fps-text"></div>
       </div>
       <button id="se-toggle" type="button">SE ON</button>
+      <button id="bgm-toggle" type="button">BGM ON</button>
     </div>
     <div id="banner"></div>
     <div id="vpad"><div id="vpad-knob"></div></div>

@@ -362,3 +362,17 @@ python3 -m http.server 8000
 - 実測: 操作前は context 未生成・バッファ7/7デコード済み、タップで
   seReady=true・running、再生は BufferSource のみ（プール再生・clone 0件）、
   SE OFF遮断、エラー0件。
+
+## 2026-11-12 BGM ON/OFFトグル（SEだけのモード）
+
+- 実機観測: 起動直後、BGMが鳴り始める前の一瞬だけSEが出て、BGM開始と
+  ともにSEが消えた。SE（WebAudio）とBGM（要素再生）は別経路で、
+  iPhone では要素再生が音声セッションを握ると WebAudio 側が消される
+  干渉が疑われる。切り分けのため BGM を切れるモードを追加。
+- audio.js: bgmEnabled（localStorage 'vansurv_bgm'、既定ON）と
+  setBgmEnabled を追加。OFF で再生中BGMを停止し、以後の playBgm 要求も
+  抑止。ON に戻すと最後に要求された曲を再開。playBgm は要求名を記録。
+- UI: HUD右下、SEボタンの左に #bgm-toggle を追加（ui.js 配線＋
+  syncBgmButton、game.js で初期同期）。
+- 実測: ゲーム中BGM再生を確認→トグルで停止・設定保存・以後の要求抑止、
+  SE側のアンロック（seReady）には影響なし、エラー0件。

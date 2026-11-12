@@ -21,7 +21,7 @@ const UI = {
       'money-text', 'fps-text', 'items-row', 'minimap', 'menu', 'menu-title', 'menu-grid',
       'menu-hint', 'endscreen', 'end-title', 'end-time', 'result-weapon-rows',
       'result-total-damage', 'result-total-dps', 'result-enemy-grid', 'result-boss-row',
-      'end-buttons', 'banner', 'loading', 'se-toggle'];
+      'end-buttons', 'banner', 'loading', 'se-toggle', 'bgm-toggle'];
     for (const id of ids) this.els[id] = document.getElementById(id);
     this.minimapCtx = this.els.minimap.getContext('2d');
     this._lastMinimapMs = 0;
@@ -33,6 +33,19 @@ const UI = {
       });
       this.syncSeButton();
     }
+    // BGM ON/OFF ボタン（SEだけのモード用）
+    if (this.els['bgm-toggle']) {
+      this.els['bgm-toggle'].addEventListener('click', () => {
+        AudioSys.setBgmEnabled(!AudioSys.bgmEnabled);
+        this.syncBgmButton();
+      });
+      this.syncBgmButton();
+    }
+  },
+
+  syncBgmButton() {
+    const b = this.els['bgm-toggle'];
+    if (b) b.textContent = AudioSys.bgmEnabled ? 'BGM ON' : 'BGM OFF';
   },
 
   syncSeButton() {

@@ -162,6 +162,7 @@ const Game = {
     SaveSystem.load();
     AudioSys.init();
     UI.syncSeButton(); // 保存済みの SE ON/OFF をボタン表示へ反映
+    UI.syncBgmButton(); // 保存済みの BGM ON/OFF をボタン表示へ反映
     const unlock = () => AudioSys.unlock();
     // iOS Safari でユーザー操作として認められるのは touchend/click/keydown/
     // pointerup（touchstart/pointerdown だけでは音声のアンロックが完了しない）。
