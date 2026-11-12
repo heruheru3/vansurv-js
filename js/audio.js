@@ -37,6 +37,7 @@ const AudioSys = {
   rr: {},             // フォールバック用: name -> 次に使うプールの位置
   bgm: null,
   bgmName: null,
+  bgmSource: null,    // BGM要素を WebAudio へ載せる MediaElementAudioSourceNode
   lastPlayed: {},     // name -> 最終再生時刻(ms)
   unlocked: false,
   sfxVolume: C.DEFAULT_SFX_VOLUME,
@@ -119,11 +120,13 @@ const AudioSys = {
   /* ユーザー操作のハンドラから呼ばれる。BGM の解放は初回のみ。
      SE のアンロックは操作のたびに _ensureContext で試み続ける */
   unlock() {
+    // 先に SE 側の context を用意してから BGM を解放する
+    // （BGM要素を WebAudio 経由に出すため、context が先に要る）
+    this._ensureContext();
     if (!this.unlocked) {
       this.unlocked = true;
       if (this._pendingBgm) { const b = this._pendingBgm; this._pendingBgm = null; this.playBgm(b); }
     }
-    this._ensureContext();
   },
 
   /* AudioContext の生成と iOS アンロック。必ず操作ハンドラの中で同期的に
@@ -136,8 +139,11 @@ const AudioSys = {
       if (!this.ctx && 'audioSession' in navigator) {
         try { navigator.audioSession.type = 'playback'; } catch (e) {}
       }
-      // バックグラウンドを挟んだ context は作り直す（無音化不具合の復旧）
+      // バックグラウンドを挟んだ context は作り直す（無音化不具合の復旧）。
+      // BGM要素は旧 context に載っているため、位置と状態を控えて載せ直す
+      let bgmResume = null;
       if (this._ctxSuspect && this.ctx) {
+        bgmResume = this._detachBgmForCtxChange();
         try { this.ctx.close(); } catch (e) {}
         this.ctx = null;
         this.master = null;
@@ -152,6 +158,7 @@ const AudioSys = {
         this.master.gain.value = this.sfxVolume;
         this.master.connect(this.ctx.destination);
         for (const n of this.SFX_NAMES) this._decodeWithLive(n);
+        if (bgmResume) this._restoreBgmAfterCtxChange(bgmResume);
       }
       // iOS には interrupted という状態もあるため、running 以外はすべて resume
       if (this.ctx.state !== 'running') {
@@ -250,12 +257,49 @@ const AudioSys = {
     const a = new Audio('assets/music/' + name + '.mp3');
     a.loop = true;
     a.volume = this.musicVolume;
+    // BGMも WebAudio の context 経由で出す。BGM要素が直接鳴ると iPhone では
+    // 音声セッションを握られて SE 側の出力が止まる（実機確認済み）ため、
+    // 出口を context の1本に統一する
+    this.bgmSource = null;
+    if (this.ctx) {
+      try {
+        const src = this.ctx.createMediaElementSource(a);
+        src.connect(this.ctx.destination);
+        this.bgmSource = src;
+      } catch (e) { this.bgmSource = null; /* 載せ替え失敗時は要素の直接再生に任せる */ }
+    }
     const p = a.play(); if (p && p.catch) p.catch(() => {});
     this.bgm = a; this.bgmName = name;
   },
 
+  /* context 作り直しの前に、BGMの曲・位置・再生状態を控えて要素を外す */
+  _detachBgmForCtxChange() {
+    if (!this.bgm) return null;
+    const st = { name: this.bgmName, time: 0, wasPlaying: false };
+    try {
+      st.time = this.bgm.currentTime || 0;
+      st.wasPlaying = !this.bgm.paused;
+      this.bgm.pause();
+    } catch (e) {}
+    this.bgm = null;
+    this.bgmName = null;
+    this.bgmSource = null;
+    return st;
+  },
+
+  /* 新しい context の上で BGM要素を作り直し、控えた位置から再開する */
+  _restoreBgmAfterCtxChange(st) {
+    if (!st || !st.name || !this.bgmEnabled) return;
+    this.playBgm(st.name);
+    if (this.bgm) {
+      try { this.bgm.currentTime = st.time; } catch (e) {}
+      if (!st.wasPlaying) { try { this.bgm.pause(); } catch (e) {} }
+    }
+  },
+
   stopMusic() {
     if (this.bgm) { try { this.bgm.pause(); } catch (e) {} this.bgm = null; this.bgmName = null; }
+    if (this.bgmSource) { try { this.bgmSource.disconnect(); } catch (e) {} this.bgmSource = null; }
   },
 };
 if (typeof module !== 'undefined') module.exports = { AudioSys };

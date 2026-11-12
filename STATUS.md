@@ -376,3 +376,17 @@ python3 -m http.server 8000
   syncBgmButton、game.js で初期同期）。
 - 実測: ゲーム中BGM再生を確認→トグルで停止・設定保存・以後の要求抑止、
   SE側のアンロック（seReady）には影響なし、エラー0件。
+
+## 2026-11-12 BGMをWebAudio経由に統一（干渉の恒常対策）
+
+- 実機確定: ゲーム中に BGM が始まると SE が消え、BGM を切ると SE が戻る。
+  あわせて SE 再生時のプチフリーズ解消も実機で確認された（WebAudio化の成果）。
+- 仕組み: BGM要素が直接鳴ると iPhone の音声セッションを握り、WebAudio 側の
+  出力が止められる。ゲーム側で SE 音量を 0 にする処理はない。
+- BGMのバッファ化は不採用（2曲デコードで約137MB、メモリ過大）。
+  代わりに BGM要素の出力を createMediaElementSource で WebAudio の
+  context へ載せ、出口を1本に統一した。unlock は context 用意後に
+  BGM を解放する順序へ変更。context 作り直し時は BGM要素も作り直して
+  曲・位置・再生状態を引き継ぐ。
+- 実測: BGM が context 経由・再生中、SE の BufferSource 生成と両立。
+  作り直し模擬でも BGM の載せ替えと seReady 復帰を確認。エラー0件。
