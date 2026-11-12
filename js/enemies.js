@@ -322,14 +322,15 @@ if (!this.isBoss) return false;
 const m = C.BOSS_WORLD_MARGIN;
 return this.x < -m || this.x > C.WORLD_WIDTH + m || this.y < -m || this.y > C.WORLD_HEIGHT + m;
 }
-/* ボスがワールド外へ出たらプレイヤー付近へ再配置（respawn_boss_randomly） */
+/* ボスがワールド外へ出たらポップエリアの端へ再配置（respawn_boss_randomly） */
 respawnNearPlayer(game) {
 const p = game.player;
+const area = game.popAreaRect();
 const side = randInt(0, 3), m = 100;
-if (side === 0) { this.x = p.x + randInt(-C.SCREEN_WIDTH / 2, C.SCREEN_WIDTH / 2); this.y = p.y - C.SCREEN_HEIGHT / 2 - m;}
-else if (side === 1) { this.x = p.x + C.SCREEN_WIDTH / 2 + m; this.y = p.y + randInt(-C.SCREEN_HEIGHT / 2, C.SCREEN_HEIGHT / 2);}
-else if (side === 2) { this.x = p.x + randInt(-C.SCREEN_WIDTH / 2, C.SCREEN_WIDTH / 2); this.y = p.y + C.SCREEN_HEIGHT / 2 + m;}
-else { this.x = p.x - C.SCREEN_WIDTH / 2 - m; this.y = p.y + randInt(-C.SCREEN_HEIGHT / 2, C.SCREEN_HEIGHT / 2);}
+if (side === 0) { this.x = randInt(Math.floor(area.left), Math.floor(area.right)); this.y = Math.floor(area.top) - m;}
+else if (side === 1) { this.x = Math.floor(area.right) + m; this.y = randInt(Math.floor(area.top), Math.floor(area.bottom));}
+else if (side === 2) { this.x = randInt(Math.floor(area.left), Math.floor(area.right)); this.y = Math.floor(area.bottom) + m;}
+else { this.x = Math.floor(area.left) - m; this.y = randInt(Math.floor(area.top), Math.floor(area.bottom));}
 this.x = Math.max(50, Math.min(C.WORLD_WIDTH - 50, this.x));
 this.y = Math.max(50, Math.min(C.WORLD_HEIGHT - 50, this.y));
 this.initialDirection = null;
@@ -393,11 +394,13 @@ return [x, y];
 }
 
 /* ---------------- 出現ディレクター (game_logic.py spawn_enemies 相当) ----------------
-通常敵: spawnInterval フレームごとに画面端へ出現。間隔は時間とともに短縮し、
+通常敵: spawnInterval フレームごとにポップエリア（プレイヤー中心の
+POP_AREA_TILES×POP_AREA_TILES マス）の端へ出現。間隔は時間とともに短縮し、
 1回あたりの出現数は 30 秒ごとに +1 され続ける（負荷確認用の増量仕様。
 原作は間隔 60f→最小10f・1回 1→3 体止まりだった）。
 上限到達時は古い敵から削除して 80% まで減らす（原作方式）。
-ボス: boss_stats.csv の spawn_time（秒）に各1回、画面外近傍に出現。 */
+ボス: boss_stats.csv の spawn_time（秒）に各1回、ポップエリアの端の外側に出現。
+出現位置はカメラやズームには依存しない（2026-11-12 浩之様の指定）。 */
 class SpawnDirector {
 constructor() {
 this.spawnTimerFrames = 0;
@@ -432,18 +435,18 @@ if (game.enemies.length >= C.MAX_ENEMIES_ON_SCREEN) {
 while (game.enemies.length > C.MAX_ENEMIES_ON_SCREEN * 0.8) game.removeEnemy(game.enemies[0]);
 }
 // 1回あたりの出現数: 30秒ごとに +1（増量仕様。原作は最大3体）。
-// ただし画面付近の敵数がレベル別上限に達している間は追加しない。
-const room = game.onscreenCap() - game.screenPopulation();
+// ただしポップエリア内の敵数がレベル別上限に達している間は追加しない。
+const room = game.popCap() - game.popPopulation();
 if (room <= 0) return;
 const num = Math.min(1 + Math.floor(game.gameTime / C.SPAWN_BATCH_STEP_SEC), room);
-const cam = game.camera, margin = 100;
+const area = game.popAreaRect(), margin = 100;
 for (let i = 0; i < num; i++) {
 const side = ['top', 'bottom', 'left', 'right'][randInt(0, 3)];
 let x, y;
-if (side === 'top') { x = randInt(Math.floor(cam.x) - margin, Math.floor(cam.x) + C.SCREEN_WIDTH + margin); y = Math.floor(cam.y) - margin;}
-else if (side === 'bottom') { x = randInt(Math.floor(cam.x) - margin, Math.floor(cam.x) + C.SCREEN_WIDTH + margin); y = Math.floor(cam.y) + C.SCREEN_HEIGHT + margin;}
-else if (side === 'left') { x = Math.floor(cam.x) - margin; y = randInt(Math.floor(cam.y) - margin, Math.floor(cam.y) + C.SCREEN_HEIGHT + margin);}
-else { x = Math.floor(cam.x) + C.SCREEN_WIDTH + margin; y = randInt(Math.floor(cam.y) - margin, Math.floor(cam.y) + C.SCREEN_HEIGHT + margin);}
+if (side === 'top') { x = randInt(Math.floor(area.left) - margin, Math.floor(area.right) + margin); y = Math.floor(area.top) - margin;}
+else if (side === 'bottom') { x = randInt(Math.floor(area.left) - margin, Math.floor(area.right) + margin); y = Math.floor(area.bottom) + margin;}
+else if (side === 'left') { x = Math.floor(area.left) - margin; y = randInt(Math.floor(area.top) - margin, Math.floor(area.bottom) + margin);}
+else { x = Math.floor(area.right) + margin; y = randInt(Math.floor(area.top) - margin, Math.floor(area.bottom) + margin);}
 x = Math.max(50, Math.min(C.WORLD_WIDTH - 50, x));
 y = Math.max(50, Math.min(C.WORLD_HEIGHT - 50, y));
 [x, y] = game.stage.findSafeSpawnPosition(x, y, 32);
@@ -460,17 +463,17 @@ game.particles.spawnBurst(x, y, 0xffffff, 1);
 }
 }
 
-/* 画面外回収した敵の再出現: 同じ enemyNo を画面端の内側へ新品で出現させる */
+/* エリア外回収した敵の再出現: 同じ enemyNo をポップエリア端の内側へ新品で出現させる */
 respawnAtEdge(game, enemyNo) {
 const stat = GameData.enemyStats.get(enemyNo);
 if (!stat) return;
-const cam = game.camera, inset = 40;
+const area = game.popAreaRect(), inset = 40;
 const side = ['top', 'bottom', 'left', 'right'][randInt(0, 3)];
 let x, y;
-if (side === 'top') { x = randInt(Math.floor(cam.x) + inset, Math.floor(cam.x) + C.SCREEN_WIDTH - inset); y = Math.floor(cam.y) + inset; }
-else if (side === 'bottom') { x = randInt(Math.floor(cam.x) + inset, Math.floor(cam.x) + C.SCREEN_WIDTH - inset); y = Math.floor(cam.y) + C.SCREEN_HEIGHT - inset; }
-else if (side === 'left') { x = Math.floor(cam.x) + inset; y = randInt(Math.floor(cam.y) + inset, Math.floor(cam.y) + C.SCREEN_HEIGHT - inset); }
-else { x = Math.floor(cam.x) + C.SCREEN_WIDTH - inset; y = randInt(Math.floor(cam.y) + inset, Math.floor(cam.y) + C.SCREEN_HEIGHT - inset); }
+if (side === 'top') { x = randInt(Math.floor(area.left) + inset, Math.floor(area.right) - inset); y = Math.floor(area.top) + inset; }
+else if (side === 'bottom') { x = randInt(Math.floor(area.left) + inset, Math.floor(area.right) - inset); y = Math.floor(area.bottom) - inset; }
+else if (side === 'left') { x = Math.floor(area.left) + inset; y = randInt(Math.floor(area.top) + inset, Math.floor(area.bottom) - inset); }
+else { x = Math.floor(area.right) - inset; y = randInt(Math.floor(area.top) + inset, Math.floor(area.bottom) - inset); }
 x = Math.max(50, Math.min(C.WORLD_WIDTH - 50, x));
 y = Math.max(50, Math.min(C.WORLD_HEIGHT - 50, y));
 [x, y] = game.stage.findSafeSpawnPosition(x, y, 32);
@@ -481,14 +484,15 @@ game.particles.spawnBurst(x, y, 0xffffff, 1);
 
 spawnBoss(game, stat) {
 const p = game.player, margin = 150;
+const area = game.popAreaRect();
 let bx = null, by = null;
 for (let attempt = 0; attempt < 3 && bx === null; attempt++) {
 const side = randInt(0, 3);
 let tx, ty;
-if (side === 0) { tx = p.x + randInt(-C.SCREEN_WIDTH / 2, C.SCREEN_WIDTH / 2); ty = p.y - C.SCREEN_HEIGHT / 2 - margin - randInt(0, 50);}
-else if (side === 1) { tx = p.x + C.SCREEN_WIDTH / 2 + margin + randInt(0, 50); ty = p.y + randInt(-C.SCREEN_HEIGHT / 2, C.SCREEN_HEIGHT / 2);}
-else if (side === 2) { tx = p.x + randInt(-C.SCREEN_WIDTH / 2, C.SCREEN_WIDTH / 2); ty = p.y + C.SCREEN_HEIGHT / 2 + margin + randInt(0, 50);}
-else { tx = p.x - C.SCREEN_WIDTH / 2 - margin - randInt(0, 50); ty = p.y + randInt(-C.SCREEN_HEIGHT / 2, C.SCREEN_HEIGHT / 2);}
+if (side === 0) { tx = randInt(Math.floor(area.left), Math.floor(area.right)); ty = Math.floor(area.top) - margin - randInt(0, 50);}
+else if (side === 1) { tx = Math.floor(area.right) + margin + randInt(0, 50); ty = randInt(Math.floor(area.top), Math.floor(area.bottom));}
+else if (side === 2) { tx = randInt(Math.floor(area.left), Math.floor(area.right)); ty = Math.floor(area.bottom) + margin + randInt(0, 50);}
+else { tx = Math.floor(area.left) - margin - randInt(0, 50); ty = randInt(Math.floor(area.top), Math.floor(area.bottom));}
 tx = Math.max(50, Math.min(C.WORLD_WIDTH - 50, tx));
 ty = Math.max(50, Math.min(C.WORLD_HEIGHT - 50, ty));
 if (50 <= tx && tx <= C.WORLD_WIDTH - 50 && 50 <= ty && ty <= C.WORLD_HEIGHT - 50) { bx = tx; by = ty;}

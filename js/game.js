@@ -266,8 +266,9 @@ const Game = {
 
   /* 画面解像度＝ウインドウサイズ（2026-11-11 浩之様の指定）:
      縦画面なら縦画面、正方形なら正方形、そのままの形で遊べる。
-     C.SCREEN_WIDTH/HEIGHT を実サイズへ更新すると、カメラ・スポーン範囲・
-     ミニマップ枠など C.SCREEN_* を参照する全ロジックが追従する。 */
+     C.SCREEN_WIDTH/HEIGHT を実サイズへ更新すると、カメラ・ミニマップ枠
+     など表示系のロジックが追従する（敵の出現範囲はポップエリア基準で、
+     表示範囲には追従しない）。 */
 
   /* ステージ定義（js/stages.js）を実行時定数 C へ流し込む。
      ステージ時間・出現ペース・画面内上限はステージ側の設定であり、
@@ -281,8 +282,30 @@ const Game = {
     if (s.intervalMinFrames) C.SPAWN_INTERVAL_MIN_FRAMES = s.intervalMinFrames;
     if (s.intervalStepSec) C.SPAWN_INTERVAL_STEP_SEC = s.intervalStepSec;
     if (s.batchStepSec) C.SPAWN_BATCH_STEP_SEC = s.batchStepSec;
-    if (s.capStages) C.ONSCREEN_CAP_STAGES = s.capStages;
+    if (s.capStages) C.POP_CAP_STAGES = s.capStages;
     if (s.maxEnemies) C.MAX_ENEMIES_ON_SCREEN = s.maxEnemies;
+    if (s.popAreaTiles) C.POP_AREA_TILES = s.popAreaTiles;
+  },
+
+  /* ズームの下限: 静的な ZOOM_MIN と「表示範囲の長辺がポップエリア
+     （POP_AREA_TILES マス）を超えない」条件の、大きい方。
+     最もカメラを引いても長辺が 64 マスを超えて見えることはない */
+  zoomMin() {
+    const vv = window.visualViewport;
+    const w = vv ? vv.width : window.innerWidth;
+    const h = vv ? vv.height : window.innerHeight;
+    const longSide = Math.max(w || 0, h || 0);
+    if (!longSide) return C.ZOOM_MIN;
+    return Math.max(C.ZOOM_MIN, longSide / (C.POP_AREA_TILES * C.TILE_SIZE));
+  },
+
+  /* 敵のポップ有効エリア（ワールド座標の矩形）: プレイヤー中心の
+     POP_AREA_TILES × POP_AREA_TILES マス。出現・上限判定・回収は
+     すべてこの矩形が基準で、カメラやズームには依存しない */
+  popAreaRect() {
+    const half = C.POP_AREA_TILES * C.TILE_SIZE / 2;
+    const p = this.player;
+    return { left: p.x - half, top: p.y - half, right: p.x + half, bottom: p.y + half };
   },
 
   /* 初期ズーム: 画面の短辺の 1/PLAYER_SIZE_DIVISOR がプレイヤーの画面上
@@ -295,7 +318,7 @@ const Game = {
     const short = Math.min(w || 0, h || 0);
     if (!short) return C.ZOOM_DEFAULT;
     const z = short / (PLAYER_SPRITE_SIZE * C.PLAYER_SIZE_DIVISOR);
-    return Math.max(C.ZOOM_MIN, Math.min(C.ZOOM_MAX, z));
+    return Math.max(this.zoomMin(), Math.min(C.ZOOM_MAX, z));
   },
 
   applyViewSize() {
@@ -304,6 +327,8 @@ const Game = {
     const vv = window.visualViewport;
     const w = Math.round(vv ? vv.width : window.innerWidth);
     const h = Math.round(vv ? vv.height : window.innerHeight);
+    // ウインドウが広がって下限が上がった場合は、ズームもそこまで引き上げる
+    if (this.zoom && this.zoom < this.zoomMin()) this.zoom = this.zoomMin();
     const z = this.zoom || C.ZOOM_DEFAULT;
     // C.SCREEN_* は「見えているワールド範囲（ワールド座標単位）」。
     // ズームを掛けると同じウインドウでより広い／狭い範囲が見える
@@ -316,7 +341,7 @@ const Game = {
   /* ズーム変更（PC: ホイール / スマホ: ピンチ）。カメラはプレイヤー中心に
      追従するので、拡縮は自然にプレイヤーを中心に行われる */
   setZoom(z) {
-    const nz = Math.max(C.ZOOM_MIN, Math.min(C.ZOOM_MAX, z));
+    const nz = Math.max(this.zoomMin(), Math.min(C.ZOOM_MAX, z));
     if (nz === this.zoom) return;
     // ズームの軸を画面中心に保つ: 変更前の表示中心（ワールド座標）を控え、
     // 新しい表示範囲でも同じ点が中心に来るようカメラを即座に移す。
@@ -658,7 +683,7 @@ const Game = {
     }
     // 7.5) 画面外の敵の回収・リポップ（一定間隔ごと）
     this.repopTimerSec = (this.repopTimerSec || 0) + dtF / 60;
-    if (this.repopTimerSec >= C.OFFSCREEN_REPOP_INTERVAL_SEC) { this.repopTimerSec = 0; this.sweepRepop(); }
+    if (this.repopTimerSec >= C.POP_REPOP_INTERVAL_SEC) { this.repopTimerSec = 0; this.sweepRepop(); }
     // 8) プレイヤー被弾（接触・敵弾）
     this.collidePlayer();
     if (p.hp <= 0 && this.state === 'playing') { this.onGameOver(); return; }
@@ -682,29 +707,29 @@ const Game = {
     this.camera.y += (ty - this.camera.y) * C.CAMERA_LERP;
   },
 
-  /* 現在の難易度レベル（経過時間帯）での画面付近の敵数上限 */
-  onscreenCap() {
-    let cap = C.ONSCREEN_CAP_STAGES[0][1];
-    for (const [t, c] of C.ONSCREEN_CAP_STAGES) if (this.gameTime >= t) cap = c;
+  /* 現在の難易度レベル（経過時間帯）でのポップエリア内の敵数上限 */
+  popCap() {
+    let cap = C.POP_CAP_STAGES[0][1];
+    for (const [t, c] of C.POP_CAP_STAGES) if (this.gameTime >= t) cap = c;
     return cap;
   },
-  /* 画面＋マージン内にいる通常敵の数（出現上限の判定用） */
-  screenPopulation() {
-    const m = C.OFFSCREEN_REPOP_MARGIN, cam = this.camera;
+  /* ポップエリア＋マージン内にいる通常敵の数（出現上限の判定用） */
+  popPopulation() {
+    const m = C.POP_REPOP_MARGIN, a = this.popAreaRect();
     let n = 0;
     for (const e of this.enemies) {
       if (e.isBoss) continue;
-      if (e.x >= cam.x - m && e.x <= cam.x + C.SCREEN_WIDTH + m && e.y >= cam.y - m && e.y <= cam.y + C.SCREEN_HEIGHT + m) n++;
+      if (e.x >= a.left - m && e.x <= a.right + m && e.y >= a.top - m && e.y <= a.bottom + m) n++;
     }
     return n;
   },
-  /* 画面外に取り残された敵を回収し、上限に余裕があれば同じ種類を画面端へ再出現させる。
-     画面外で固まった敵が溜まり続けるのを防ぐ（2026-11-11 浩之様の指定）。 */
+  /* ポップエリア外に取り残された敵を回収し、上限に余裕があれば同じ種類をエリア端へ再出現させる。
+     エリア外で固まった敵が溜まり続けるのを防ぐ（2026-11-11 浩之様の指定）。 */
   sweepRepop() {
-    const m = C.OFFSCREEN_REPOP_MARGIN, cam = this.camera;
-    const inArea = (e) => e.x >= cam.x - m && e.x <= cam.x + C.SCREEN_WIDTH + m && e.y >= cam.y - m && e.y <= cam.y + C.SCREEN_HEIGHT + m;
-    let pop = this.screenPopulation();
-    const cap = this.onscreenCap();
+    const m = C.POP_REPOP_MARGIN, a = this.popAreaRect();
+    const inArea = (e) => e.x >= a.left - m && e.x <= a.right + m && e.y >= a.top - m && e.y <= a.bottom + m;
+    let pop = this.popPopulation();
+    const cap = this.popCap();
     for (const e of [...this.enemies]) {
       if (e.isBoss || inArea(e)) continue;
       const no = e.enemyNo;

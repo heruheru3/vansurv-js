@@ -8,10 +8,16 @@ const C = {
   SCREEN_HEIGHT: 720,
   // ズーム（ワールド→画面の倍率）。初期値は画面の短辺から算出する
   // （下の PLAYER_SIZE_DIVISOR 参照）。ZOOM_DEFAULT は算出できない時の予備。
-  // ゲーム中はホイール／ピンチで ZOOM_MIN..ZOOM_MAX の範囲で変更できる
+  // ゲーム中はホイール／ピンチで変更できる。下限は ZOOM_MIN を静的な値としつつ、
+  // 「最も引いた時でも表示範囲の長辺がポップエリア（POP_AREA_TILES マス）を
+  // 超えない」よう Game.zoomMin() がウインドウ長辺から動的に引き上げる
   ZOOM_DEFAULT: 0.8,
   ZOOM_MIN: 0.45,
   ZOOM_MAX: 3.0,
+  // 敵のポップ有効エリア（マス数）。プレイヤー中心のこの正方形が出現・
+  // 上限判定・回収の基準で、カメラやズームには依存しない
+  // （ステージ定義 js/stages.js が正本。ここは既定値）
+  POP_AREA_TILES: 64,
   // 初期ズームの基準: 画面の縦横のうち短い方 ÷ この値 が、プレイヤーの
   // 画面上サイズになる（2026-11-12 浩之様の指定: 短辺の 1/10 程度）
   PLAYER_SIZE_DIVISOR: 10,
@@ -50,11 +56,11 @@ const C = {
   SPAWN_INTERVAL_MIN_FRAMES: 5,     // 出現間隔の下限（フレーム）
   SPAWN_INTERVAL_STEP_SEC: 10,      // この秒数ごとに間隔を1フレーム短縮
   SPAWN_BATCH_STEP_SEC: 20,         // この秒数ごとに1回あたりの出現数を+1（上限なし）
-  // 画面付近の敵数上限（難易度レベル＝経過時間帯ごとに増加）: [開始秒, 上限]
+  // ポップエリア内の敵数上限（難易度レベル＝経過時間帯ごとに増加）: [開始秒, 上限]
   // 180秒で上限500に到達し、200秒（クリア）まで500体を維持する
-  ONSCREEN_CAP_STAGES: [[0, 100], [40, 180], [80, 260], [120, 340], [160, 430], [180, 500]],
-  OFFSCREEN_REPOP_MARGIN: 160,      // 画面端からこの距離(px)を超えて外れた敵は回収対象
-  OFFSCREEN_REPOP_INTERVAL_SEC: 1,  // 画面外敵の回収チェック間隔（秒）
+  POP_CAP_STAGES: [[0, 100], [40, 180], [80, 260], [120, 340], [160, 430], [180, 500]],
+  POP_REPOP_MARGIN: 160,            // ポップエリアからこの距離(px)を超えて外れた敵は回収対象
+  POP_REPOP_INTERVAL_SEC: 1,        // エリア外敵の回収チェック間隔（秒）
 
   NATURAL_HEAL_INTERVAL_MS: 2000,
   NATURAL_HEAL_AMOUNT: 0,           // + HP-subitem level per tick (player.py)
