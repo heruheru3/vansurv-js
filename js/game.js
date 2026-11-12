@@ -295,8 +295,18 @@ const Game = {
   setZoom(z) {
     const nz = Math.max(C.ZOOM_MIN, Math.min(C.ZOOM_MAX, z));
     if (nz === this.zoom) return;
+    // ズームの軸を画面中心に保つ: 変更前の表示中心（ワールド座標）を控え、
+    // 新しい表示範囲でも同じ点が中心に来るようカメラを即座に移す。
+    // 追従 lerp に任せると、左上へ飛んでから中心へ戻るブレが出る
+    const hasCam = !!this.camera;
+    const cx = hasCam ? this.camera.x + C.SCREEN_WIDTH / 2 : 0;
+    const cy = hasCam ? this.camera.y + C.SCREEN_HEIGHT / 2 : 0;
     this.zoom = nz;
     this.applyViewSize();
+    if (hasCam) {
+      this.camera.x = clamp(cx - C.SCREEN_WIDTH / 2, 0, C.WORLD_WIDTH - C.SCREEN_WIDTH);
+      this.camera.y = clamp(cy - C.SCREEN_HEIGHT / 2, 0, C.WORLD_HEIGHT - C.SCREEN_HEIGHT);
+    }
   },
 
   /* ---------- 入力 ---------- */
