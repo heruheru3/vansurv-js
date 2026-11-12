@@ -38,6 +38,8 @@ const AudioSys = {
   bgm: null,
   bgmName: null,
   bgmSource: null,    // BGM要素を WebAudio へ載せる MediaElementAudioSourceNode
+  bgmGain: null,      // 経由時のBGM音量はグラフ内の GainNode で制御する
+                      // （経由後は要素の volume が効かない実装があるため）
   lastPlayed: {},     // name -> 最終再生時刻(ms)
   unlocked: false,
   sfxVolume: C.DEFAULT_SFX_VOLUME,
@@ -259,14 +261,22 @@ const AudioSys = {
     a.volume = this.musicVolume;
     // BGMも WebAudio の context 経由で出す。BGM要素が直接鳴ると iPhone では
     // 音声セッションを握られて SE 側の出力が止まる（実機確認済み）ため、
-    // 出口を context の1本に統一する
+    // 出口を context の1本に統一する。
+    // 経由時の音量はグラフ内の GainNode で制御する: 経由後は要素の volume を
+    // 無視する実装があり（実機で 0.02 が効かなかった）、要素側は素通しにする
     this.bgmSource = null;
+    this.bgmGain = null;
     if (this.ctx) {
       try {
         const src = this.ctx.createMediaElementSource(a);
-        src.connect(this.ctx.destination);
+        const g = this.ctx.createGain();
+        g.gain.value = this.musicVolume;
+        src.connect(g);
+        g.connect(this.ctx.destination);
         this.bgmSource = src;
-      } catch (e) { this.bgmSource = null; /* 載せ替え失敗時は要素の直接再生に任せる */ }
+        this.bgmGain = g;
+        a.volume = 1;
+      } catch (e) { this.bgmSource = null; this.bgmGain = null; /* 載せ替え失敗時は要素の直接再生に任せる */ }
     }
     const p = a.play(); if (p && p.catch) p.catch(() => {});
     this.bgm = a; this.bgmName = name;
@@ -284,6 +294,7 @@ const AudioSys = {
     this.bgm = null;
     this.bgmName = null;
     this.bgmSource = null;
+    this.bgmGain = null;
     return st;
   },
 
@@ -300,6 +311,7 @@ const AudioSys = {
   stopMusic() {
     if (this.bgm) { try { this.bgm.pause(); } catch (e) {} this.bgm = null; this.bgmName = null; }
     if (this.bgmSource) { try { this.bgmSource.disconnect(); } catch (e) {} this.bgmSource = null; }
+    if (this.bgmGain) { try { this.bgmGain.disconnect(); } catch (e) {} this.bgmGain = null; }
   },
 };
 if (typeof module !== 'undefined') module.exports = { AudioSys };
